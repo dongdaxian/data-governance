@@ -1,4 +1,4 @@
-"""LLM 客户端通用封装 -- 使用 LangChain ChatOpenAI 接入智谱AI GLM-5.2。
+"""LLM 客户端通用封装 -- 使用 LangChain ChatOpenAI 接入火山引擎 GLM-5.2。
 
 通过 with_structured_output 实现 Pydantic Schema 约束的结构化输出，
 内置重试机制应对偶发的 API 超时或格式异常。
@@ -10,8 +10,8 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 
 from config import (
-    ZHIPUAI_API_KEY,
-    ZHIPUAI_BASE_URL,
+    API_KEY,
+    BASE_URL,
     LLM_MODEL,
     LLM_TEMPERATURE,
     LLM_MAX_TOKENS,
@@ -21,16 +21,10 @@ from config import (
 
 def get_llm() -> ChatOpenAI:
     """创建 LLM 实例。"""
-    if ZHIPUAI_API_KEY == "YOUR_API_KEY_HERE":
-        raise ValueError(
-            "请先配置 API Key！\n"
-            "  方式1：在 config.py 中修改 ZHIPUAI_API_KEY\n"
-            "  方式2：在项目根目录创建 .env 文件，写入 ZHIPUAI_API_KEY=你的key"
-        )
     return ChatOpenAI(
         model=LLM_MODEL,
-        api_key=ZHIPUAI_API_KEY,
-        base_url=ZHIPUAI_BASE_URL,
+        api_key=API_KEY,
+        base_url=BASE_URL,
         temperature=LLM_TEMPERATURE,
         max_tokens=LLM_MAX_TOKENS,
     )
