@@ -1,8 +1,10 @@
 """生成示例输入 Excel，包含各种测试场景。
 
-运行：python create_sample.py
-生成：sample_input.xlsx
+运行：python -m quality_check.create_sample
+生成：../data/sample_input.xlsx
 """
+
+import os
 
 import pandas as pd
 
@@ -103,7 +105,10 @@ def main():
     ]
 
     df = pd.DataFrame(data)
-    output = "sample_input.xlsx"
+    # 输出到项目根目录的 data/ 目录下
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(current_dir)
+    output = os.path.join(project_root, "data", "sample_input.xlsx")
     df.to_excel(output, index=False)
     print(f"示例文件已生成: {output}（{len(data)} 行测试数据）")
 

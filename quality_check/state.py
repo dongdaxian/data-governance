@@ -39,7 +39,7 @@ class GraphState(TypedDict):
 
 
 # ============================================================
-# Pydantic Schema —— 用于 LLM with_structured_output
+# Pydantic Schema -- 用于 LLM with_structured_output
 # ============================================================
 
 from pydantic import BaseModel, Field

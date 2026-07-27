@@ -1,34 +1,22 @@
-"""数据质量检查 -- 入口脚本。
+"""数据治理工具 -- 统一入口。
 
 用法：
-  python main.py --input 输入.xlsx --output 输出.xlsx
+  python main.py quality-check --input 输入.xlsx --output 输出.xlsx
+  python main.py standard-mapping --input 输入.xlsx --output 输出.xlsx
+  python main.py standard-maintenance --input 输入.xlsx --output 输出.xlsx
 
 示例：
-  python main.py --input sample_input.xlsx --output sample_output.xlsx
+  python main.py quality-check --input data/sample_input.xlsx --output data/sample_output.xlsx
 """
 
 import argparse
 import sys
 import os
 
-from graph import build_graph
 
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="数据质量检查工具 -- 使用 GLM-5.2 + LangGraph 检查 Excel 数据质量"
-    )
-    parser.add_argument(
-        "--input", "-i",
-        required=True,
-        help="输入 Excel 文件路径",
-    )
-    parser.add_argument(
-        "--output", "-o",
-        default=None,
-        help="输出 Excel 文件路径（默认在输入文件名后加 _output）",
-    )
-    args = parser.parse_args()
+def run_quality_check(args):
+    """运行数据质量检查。"""
+    from quality_check.graph import build_graph
 
     input_file = args.input
     if not os.path.exists(input_file):
@@ -63,6 +51,46 @@ def main():
     print("  检查完成！")
     print(f"  结果文件: {output_file}")
     print("=" * 60)
+
+
+def run_standard_mapping(args):
+    """运行落标处理。"""
+    print("落标处理模块开发中...")
+
+
+def run_standard_maintenance(args):
+    """运行标准维护。"""
+    print("标准维护模块开发中...")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="数据治理工具")
+    subparsers = parser.add_subparsers(dest="command", help="选择功能模块")
+
+    # quality-check
+    qc_parser = subparsers.add_parser("quality-check", help="数据质量检查")
+    qc_parser.add_argument("--input", "-i", required=True, help="输入 Excel 文件路径")
+    qc_parser.add_argument("--output", "-o", default=None, help="输出 Excel 文件路径（默认在输入文件名后加 _output）")
+
+    # standard-mapping
+    sm_parser = subparsers.add_parser("standard-mapping", help="落标处理")
+    sm_parser.add_argument("--input", "-i", required=True, help="输入 Excel 文件路径")
+    sm_parser.add_argument("--output", "-o", default=None, help="输出 Excel 文件路径（默认在输入文件名后加 _output）")
+
+    # standard-maintenance
+    stm_parser = subparsers.add_parser("standard-maintenance", help="标准维护")
+    stm_parser.add_argument("--input", "-i", required=True, help="输入 Excel 文件路径")
+    stm_parser.add_argument("--output", "-o", default=None, help="输出 Excel 文件路径（默认在输入文件名后加 _output）")
+
+    args = parser.parse_args()
+    if args.command == "quality-check":
+        run_quality_check(args)
+    elif args.command == "standard-mapping":
+        run_standard_mapping(args)
+    elif args.command == "standard-maintenance":
+        run_standard_maintenance(args)
+    else:
+        parser.print_help()
 
 
 if __name__ == "__main__":

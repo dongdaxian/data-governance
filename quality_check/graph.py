@@ -3,8 +3,8 @@
 构建数据质量检查的工作流图，使用并行节点加速 LLM 调用。
 
 图拓扑：
-  START → load_excel → check_basic → ┌─ check_semantic ──┐
-                                     └─ normalize_enum ──┘ → combine_results → write_excel → END
+  START -> load_excel -> check_basic -> ┌─ check_semantic ──┐
+                                     └─ normalize_enum ──┘ -> combine_results -> write_excel -> END
 
 check_semantic 和 normalize_enum 并行执行，各自写入独立的状态字段，
 combine_results 作为 barrier 节点等待两者完成后汇总。
@@ -12,8 +12,8 @@ combine_results 作为 barrier 节点等待两者完成后汇总。
 
 from langgraph.graph import StateGraph, START, END
 
-from state import GraphState
-from nodes import (
+from quality_check.state import GraphState
+from quality_check.nodes import (
     load_excel_node,
     check_basic_node,
     check_semantic_node,

@@ -6,13 +6,13 @@
 
 import pandas as pd
 
-from config import (
+from quality_check.constants import (
     INPUT_COLUMNS,
     COL_NORMALIZED_ENUM,
     COL_CHECK_RESULT,
     COL_FAIL_REASON,
 )
-from state import RowData
+from quality_check.state import RowData
 
 
 def _match_columns(df: pd.DataFrame) -> dict[str, str]:

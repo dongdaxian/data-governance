@@ -1,4 +1,4 @@
-"""配置文件 —— LLM API Key、模型参数、Excel列名等全局配置。
+"""配置文件 -- LLM API Key、模型参数等全局配置。
 
 使用方式：
   1. 直接修改下方 ZHIPUAI_API_KEY 的值
@@ -15,7 +15,7 @@ load_dotenv()
 # LLM 配置
 # ============================================================
 
-# 智谱AI API Key —— 请在此处填写你的 key
+# 智谱AI API Key -- 请在此处填写你的 key
 ZHIPUAI_API_KEY = os.getenv("ZHIPUAI_API_KEY", "YOUR_API_KEY_HERE")
 
 # 智谱AI OpenAI兼容接口地址
@@ -33,20 +33,3 @@ BATCH_SIZE = 20
 
 # LLM 调用失败时的最大重试次数
 MAX_RETRIES = 3
-
-# ============================================================
-# Excel 列名配置
-# ============================================================
-
-# 输入列名（支持模糊匹配）
-INPUT_COLUMNS = {
-    "field_name": ["字段中文名", "字段名称", "中文名", "字段名"],
-    "field_type": ["字段所属类型", "字段类型", "所属类型", "类型"],
-    "business_meaning": ["业务含义", "含义", "业务说明", "说明"],
-    "enum_values": ["枚举值", "枚举", "码值", "代码值"],
-}
-
-# 输出新增列名
-COL_NORMALIZED_ENUM = "规范化后的枚举值"
-COL_CHECK_RESULT = "检查结果"
-COL_FAIL_REASON = "不通过原因"
