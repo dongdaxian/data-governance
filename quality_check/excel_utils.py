@@ -1,10 +1,13 @@
 """Excel 读取/写入工具。
 
 读取：将 Excel 解析为 RowData 列表，支持列名模糊匹配。
+  输入 Excel 格式：第1行合并表头"基本信息"，第2行列名，第3行+数据。
 写入：在原始数据基础上追加三列检查结果，输出新 Excel。
+  输出 Excel 格式：第1行合并表头（"基本信息" + "数管反馈"），第2行列名，第3行+数据。
 """
 
 import pandas as pd
+from openpyxl import load_workbook
 
 from quality_check.constants import (
     INPUT_COLUMNS,
@@ -40,8 +43,11 @@ def _match_columns(df: pd.DataFrame) -> dict[str, str]:
 
 
 def read_excel(file_path: str) -> list[RowData]:
-    """读取 Excel 文件，返回 RowData 列表。"""
-    df = pd.read_excel(file_path)
+    """读取 Excel 文件，返回 RowData 列表。
+
+    输入 Excel 第1行为合并表头，第2行为列名，从第3行开始为数据。
+    """
+    df = pd.read_excel(file_path, header=1)
     col_map = _match_columns(df)
 
     rows: list[RowData] = []
@@ -72,9 +78,10 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
     """将检查结果写入 Excel。
 
     保留原始数据列，追加三列：规范化后的枚举值、检查结果、不通过原因。
+    输出格式：第1行合并表头（"基本信息" + "数管反馈"），第2行列名，第3行+数据。
     """
-    # 重新读取原始 Excel 以保留原始列名和数据
-    df = pd.read_excel(input_file)
+    # 读取原始 Excel（跳过合并表头行，从第2行开始）
+    df = pd.read_excel(input_file, header=1)
 
     # 按 rows 的 index 顺序追加结果列
     sorted_rows = sorted(rows, key=lambda r: r["index"])
@@ -87,6 +94,18 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
     df[COL_FAIL_REASON] = [r["fail_reason"] for r in sorted_rows]
 
     df.to_excel(file_path, index=False)
+
+    # 在第1行插入合并表头："基本信息"（前4列）+ "数管反馈"（后3列）
+    wb = load_workbook(file_path)
+    ws = wb.active
+    ws.insert_rows(1)
+    total_cols = len(df.columns)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=4)
+    ws.cell(row=1, column=1, value="基本信息")
+    ws.merge_cells(start_row=1, start_column=5, end_row=1, end_column=total_cols)
+    ws.cell(row=1, column=5, value="数管反馈")
+    wb.save(file_path)
+
     print(f"结果已写入: {file_path}")
 
     # 打印统计

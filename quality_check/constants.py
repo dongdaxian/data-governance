@@ -8,6 +8,9 @@ INPUT_COLUMNS = {
     "enum_values": ["枚举值", "枚举", "码值", "代码值"],
 }
 
+# 合法的字段所属类型
+VALID_FIELD_TYPES = ["数值类", "编码类", "代码枚举类", "日期时间类", "标志类", "文本类"]
+
 # 输出新增列名
 COL_NORMALIZED_ENUM = "规范化后的枚举值"
 COL_CHECK_RESULT = "检查结果"

@@ -22,6 +22,7 @@
 from quality_check.state import GraphState, RowData
 from quality_check.excel_utils import read_excel, write_excel
 from quality_check.llm import get_llm, check_business_meaning, normalize_enum_values
+from quality_check.constants import VALID_FIELD_TYPES
 
 
 # ============================================================
@@ -40,29 +41,34 @@ def load_excel_node(state: GraphState) -> dict:
 # ============================================================
 
 def check_basic_node(state: GraphState) -> dict:
-    """规则检查：字段中文名、字段所属类型、业务含义是否为空。"""
-    print("\n=== 步骤 2/5: 基础规则检查（空值检测）===")
+    """规则检查：字段中文名、字段所属类型、业务含义是否为空，以及字段所属类型是否合法。"""
+    print("\n=== 步骤 2/5: 基础规则检查（空值检测 + 类型校验）===")
     rows = state["rows"]
-    empty_count = 0
+    issue_count = 0
 
     for row in rows:
-        empty_fields = []
+        issues = []
+        # 空值检查
         if not row["field_name"]:
-            empty_fields.append("字段中文名")
+            issues.append("字段中文名为空")
         if not row["field_type"]:
-            empty_fields.append("字段所属类型")
+            issues.append("字段所属类型为空")
         if not row["business_meaning"]:
-            empty_fields.append("业务含义")
+            issues.append("业务含义为空")
 
-        if empty_fields:
+        # 字段所属类型合法性检查
+        if row["field_type"] and row["field_type"] not in VALID_FIELD_TYPES:
+            issues.append(f"字段所属类型'{row['field_type']}'不合法，必须是{VALID_FIELD_TYPES}中的一种")
+
+        if issues:
             row["is_empty_issue"] = True
-            row["empty_details"] = f"以下列为空: {', '.join(empty_fields)}"
-            empty_count += 1
+            row["empty_details"] = "; ".join(issues)
+            issue_count += 1
         else:
             row["is_empty_issue"] = False
             row["empty_details"] = ""
 
-    print(f"  发现 {empty_count} 行存在空值问题")
+    print(f"  发现 {issue_count} 行存在基础规则问题")
     return {"rows": rows}
 
 

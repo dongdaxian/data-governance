@@ -32,7 +32,7 @@ def get_llm() -> ChatOpenAI:
 
 def call_with_retry(llm: ChatOpenAI, schema, system_text: str, user_text: str):
     """带重试的结构化输出调用。"""
-    structured_llm = llm.with_structured_output(schema)
+    structured_llm = llm.with_structured_output(schema, method="function_calling")
     messages = [SystemMessage(content=system_text), HumanMessage(content=user_text)]
 
     for attempt in range(MAX_RETRIES):
