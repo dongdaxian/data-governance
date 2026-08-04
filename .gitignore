@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .env
 data/sample_output.xlsx
+
+# 向量备份（自动生成）
+data/vector_backup/
