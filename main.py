@@ -55,7 +55,41 @@ def run_quality_check(args):
 
 def run_standard_mapping(args):
     """运行落标处理。"""
-    print("落标处理模块开发中...")
+    from standard_mapping.graph import build_graph
+
+    input_file = args.input
+    if not os.path.exists(input_file):
+        print(f"错误：输入文件不存在: {input_file}")
+        sys.exit(1)
+
+    output_file = args.output
+    if output_file is None:
+        base, ext = os.path.splitext(input_file)
+        output_file = f"{base}_output{ext}"
+
+    print("=" * 60)
+    print("  落标处理工具")
+    print(f"  输入文件: {input_file}")
+    print(f"  输出文件: {output_file}")
+    print("=" * 60)
+
+    # 构建并执行工作流
+    app = build_graph()
+
+    initial_state = {
+        "rows": [],
+        "input_file": input_file,
+        "output_file": output_file,
+        "domain_results": [],
+        "selection_results": [],
+    }
+
+    app.invoke(initial_state, config={"recursion_limit": 100})
+
+    print("\n" + "=" * 60)
+    print("  落标处理完成！")
+    print(f"  结果文件: {output_file}")
+    print("=" * 60)
 
 
 def run_standard_maintenance(args):
