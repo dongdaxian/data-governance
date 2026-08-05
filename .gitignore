@@ -3,3 +3,6 @@ __pycache__/
 .env
 .trae/
 data/sample_output.xlsx
+
+# 向量备份（自动生成）
+data/vector_backup/
