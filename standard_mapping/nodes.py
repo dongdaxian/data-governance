@@ -3,7 +3,7 @@
 图结构：
   START
     ↓
-  load_and_fetch   -- 读取 Excel，筛选非枚举类字段，调用 Mock 接口获取备选标准
+  load_and_fetch   -- 读取 Excel，筛选非枚举类字段，调用接口获取备选标准
     ↓
   check_domain     -- 域类型精筛（标志类恒定通过，非标志类正则检测冲突+LLM换域）
     ↓
@@ -30,176 +30,22 @@ from standard_mapping.constants import (
 
 
 # ============================================================
-# Mock 标准字典池（按所属类型分组）
+# 备选标准接口（TODO: 替换为实际接口调用）
 # ============================================================
 
-_MOCK_STANDARDS: dict[str, list[CandidateStandard]] = {
-    "数值类": [
-        {"std_id": "STD_NUM_001", "std_name": "交易金额", "std_type": "数值类",
-         "business_definition": "记录一笔交易的实际发生金额，单位为元",
-         "domain_id": "NUM00001", "domain_name": "金额", "domain_type": "i(15,2)",
-         "data_example": "12345.67"},
-        {"std_id": "STD_NUM_002", "std_name": "账户余额", "std_type": "数值类",
-         "business_definition": "账户当前的可用余额",
-         "domain_id": "NUM00001", "domain_name": "金额", "domain_type": "i(15,2)",
-         "data_example": "50000.00"},
-        {"std_id": "STD_NUM_003", "std_name": "利率", "std_type": "数值类",
-         "business_definition": "年化利率百分比",
-         "domain_id": "NUM00003", "domain_name": "比例", "domain_type": "i(3,4)",
-         "data_example": "3.5000"},
-        {"std_id": "STD_NUM_004", "std_name": "交易笔数", "std_type": "数值类",
-         "business_definition": "统计周期内的交易总笔数",
-         "domain_id": "NUM00002", "domain_name": "数量", "domain_type": "i(10)",
-         "data_example": "100"},
-        {"std_id": "STD_NUM_005", "std_name": "序号", "std_type": "数值类",
-         "business_definition": "记录的顺序编号",
-         "domain_id": "NUM00004", "domain_name": "序号", "domain_type": "n..(10)",
-         "data_example": "1"},
-    ],
-    "日期时间类": [
-        {"std_id": "STD_DTM_001", "std_name": "开户日期", "std_type": "日期时间类",
-         "business_definition": "客户开立账户的日期",
-         "domain_id": "DTM00001", "domain_name": "日期", "domain_type": "DATE",
-         "data_example": "20240101"},
-        {"std_id": "STD_DTM_002", "std_name": "到期日期", "std_type": "日期时间类",
-         "business_definition": "产品或合约到期的日期",
-         "domain_id": "DTM00001", "domain_name": "日期", "domain_type": "DATE",
-         "data_example": "20251231"},
-        {"std_id": "STD_DTM_003", "std_name": "交易时间", "std_type": "日期时间类",
-         "business_definition": "交易发生的时间",
-         "domain_id": "DTM00003", "domain_name": "日期时间", "domain_type": "DATETIME",
-         "data_example": "20240101120000"},
-        {"std_id": "STD_DTM_004", "std_name": "更新时间", "std_type": "日期时间类",
-         "business_definition": "记录最后更新的时间",
-         "domain_id": "DTM00004", "domain_name": "时间戳", "domain_type": "TIMESTAMP",
-         "data_example": "20240101120000"},
-    ],
-    "标志类": [
-        {"std_id": "STD_FLG_001", "std_name": "是否标志", "std_type": "标志类",
-         "business_definition": "通用的是否标志，0表示否，1表示是",
-         "domain_id": "FLG00001", "domain_name": "标志", "domain_type": "n!(1)",
-         "data_example": "1"},
-    ],
-    "编码类": [
-        {"std_id": "STD_ECD_001", "std_name": "客户编号", "std_type": "编码类",
-         "business_definition": "系统中客户的唯一标识编号",
-         "domain_id": "ECD00001", "domain_name": "通用编号", "domain_type": "an..(20)",
-         "data_example": "CUST20240101"},
-        {"std_id": "STD_ECD_002", "std_name": "机构编号", "std_type": "编码类",
-         "business_definition": "银行机构的唯一标识编号",
-         "domain_id": "ECD00002", "domain_name": "机构编号", "domain_type": "an..(10)",
-         "data_example": "B001"},
-        {"std_id": "STD_ECD_003", "std_name": "证件号码", "std_type": "编码类",
-         "business_definition": "客户证件的号码",
-         "domain_id": "ECD00003", "domain_name": "证件号码", "domain_type": "an..(20)",
-         "data_example": "110101199001011234"},
-        {"std_id": "STD_ECD_004", "std_name": "流水编号", "std_type": "编码类",
-         "business_definition": "交易的流水编号",
-         "domain_id": "ECD00004", "domain_name": "数字编码", "domain_type": "n..(10)",
-         "data_example": "20240101001"},
-        {"std_id": "STD_ECD_005", "std_name": "产品代码", "std_type": "编码类",
-         "business_definition": "金融产品的唯一代码",
-         "domain_id": "ECD00001", "domain_name": "通用编号", "domain_type": "an..(20)",
-         "data_example": "P001"},
-    ],
-    "文本类": [
-        {"std_id": "STD_TXT_001", "std_name": "客户名称", "std_type": "文本类",
-         "business_definition": "客户的姓名或企业名称",
-         "domain_id": "TXT00002", "domain_name": "名称", "domain_type": "anc..(100)",
-         "data_example": "张三"},
-        {"std_id": "STD_TXT_002", "std_name": "产品名称", "std_type": "文本类",
-         "business_definition": "金融产品的名称",
-         "domain_id": "TXT00002", "domain_name": "名称", "domain_type": "anc..(100)",
-         "data_example": "活期存款"},
-        {"std_id": "STD_TXT_003", "std_name": "地址描述", "std_type": "文本类",
-         "business_definition": "客户的居住地址描述",
-         "domain_id": "TXT00003", "domain_name": "描述", "domain_type": "anc..(500)",
-         "data_example": "北京市朝阳区"},
-        {"std_id": "STD_TXT_004", "std_name": "备注说明", "std_type": "文本类",
-         "business_definition": "通用的备注说明文本",
-         "domain_id": "TXT00001", "domain_name": "通用文本", "domain_type": "anc..(200)",
-         "data_example": "无"},
-        {"std_id": "STD_TXT_005", "std_name": "客户简称", "std_type": "文本类",
-         "business_definition": "客户的简称或缩写",
-         "domain_id": "TXT00004", "domain_name": "短文本", "domain_type": "an..(50)",
-         "data_example": "ABC"},
-    ],
-}
+def fetch_candidates(field_name: str, business_meaning: str) -> list[CandidateStandard]:
+    """调用外部接口获取备选标准列表。
 
-# Mock 域池（按所属类型分组，用于换域建议）
-_MOCK_DOMAINS: dict[str, list[dict]] = {
-    "数值类": [
-        {"domain_id": "NUM00001", "domain_name": "金额", "domain_type": "i(15,2)"},
-        {"domain_id": "NUM00002", "domain_name": "数量", "domain_type": "i(10)"},
-        {"domain_id": "NUM00003", "domain_name": "比例", "domain_type": "i(3,4)"},
-        {"domain_id": "NUM00004", "domain_name": "序号", "domain_type": "n..(10)"},
-    ],
-    "日期时间类": [
-        {"domain_id": "DTM00001", "domain_name": "日期", "domain_type": "DATE"},
-        {"domain_id": "DTM00002", "domain_name": "时间", "domain_type": "TIME"},
-        {"domain_id": "DTM00003", "domain_name": "日期时间", "domain_type": "DATETIME"},
-        {"domain_id": "DTM00004", "domain_name": "时间戳", "domain_type": "TIMESTAMP"},
-    ],
-    "标志类": [
-        {"domain_id": "FLG00001", "domain_name": "标志", "domain_type": "n!(1)"},
-    ],
-    "编码类": [
-        {"domain_id": "ECD00001", "domain_name": "通用编号", "domain_type": "an..(20)"},
-        {"domain_id": "ECD00002", "domain_name": "机构编号", "domain_type": "an..(10)"},
-        {"domain_id": "ECD00003", "domain_name": "证件号码", "domain_type": "an..(20)"},
-        {"domain_id": "ECD00004", "domain_name": "数字编码", "domain_type": "n..(10)"},
-        {"domain_id": "ECD00005", "domain_name": "固定编码", "domain_type": "an!(8)"},
-    ],
-    "文本类": [
-        {"domain_id": "TXT00001", "domain_name": "通用文本", "domain_type": "anc..(200)"},
-        {"domain_id": "TXT00002", "domain_name": "名称", "domain_type": "anc..(100)"},
-        {"domain_id": "TXT00003", "domain_name": "描述", "domain_type": "anc..(500)"},
-        {"domain_id": "TXT00004", "domain_name": "短文本", "domain_type": "an..(50)"},
-        {"domain_id": "TXT00005", "domain_name": "纯字母代码", "domain_type": "a..(20)"},
-    ],
-}
+    Args:
+        field_name: 字段中文名
+        business_meaning: 业务含义
 
-
-# ============================================================
-# Mock API: 获取备选标准
-# ============================================================
-
-def _has_keyword_overlap(name1: str, name2: str) -> bool:
-    """检查两个名称是否共享2字以上的子串。"""
-    if not name1 or not name2:
-        return False
-    # 完全包含
-    if name1 in name2 or name2 in name1:
-        return True
-    # 共享2字子串
-    for i in range(len(name1) - 1):
-        sub = name1[i : i + 2]
-        if sub in name2:
-            return True
-    return False
-
-
-def _fetch_candidates(field: FieldToMap) -> list[CandidateStandard]:
-    """Mock API: 根据字段名关键词匹配返回备选标准。
-
-    返回 0-3 个备选标准，同所属类型内匹配。
-    某些备选标准的域类型可能与数据示例冲突（触发换域流程）。
+    Returns:
+        备选标准列表，每项包含 std_id/std_name/std_type/business_definition/
+        domain_id/domain_name/domain_type/data_example
     """
-    field_name = field["field_name"]
-    field_type = field["field_type"]
-
-    pool = _MOCK_STANDARDS.get(field_type, [])
-    if not pool:
-        return []
-
-    # 关键词匹配：字段名与标准名共享2字以上子串
-    candidates = []
-    for std in pool:
-        if _has_keyword_overlap(field_name, std["std_name"]):
-            # 返回副本，避免修改原始池
-            candidates.append(dict(std))
-
-    return candidates[:3]
+    # TODO: 替换为实际接口调用
+    raise NotImplementedError("备选标准接口尚未对接，请实现 fetch_candidates()")
 
 
 # ============================================================
@@ -309,7 +155,9 @@ def _detect_domain_conflict(domain_type: str, data_example: str) -> bool:
             return True
         return False
 
-    # 未知域类型，不判定冲突
+    # 未知域类型，记录警告
+    import logging
+    logging.warning(f"未知域类型: {dt}，数据示例: {example}，跳过冲突检测")
     return False
 
 
@@ -318,7 +166,7 @@ def _detect_domain_conflict(domain_type: str, data_example: str) -> bool:
 # ============================================================
 
 def load_and_fetch_node(state: MappingGraphState) -> dict:
-    """读取输入 Excel，筛选非代码枚举类字段，调用 Mock 接口获取备选标准。"""
+    """读取输入 Excel，筛选非代码枚举类字段，调用接口获取备选标准。"""
     print("\n=== 步骤 1/4: 加载 Excel 并获取备选标准 ===")
     all_rows = read_excel(state["input_file"])
 
@@ -328,18 +176,11 @@ def load_and_fetch_node(state: MappingGraphState) -> dict:
     if enum_count > 0:
         print(f"  筛选: 排除 {enum_count} 行代码枚举类字段，保留 {len(rows)} 行非枚举类字段")
 
-    # 调用 Mock 接口获取备选标准
-    with_candidates = 0
-    without_candidates = 0
+    # 调用接口获取备选标准
     for row in rows:
-        candidates = _fetch_candidates(row)
-        row["candidates"] = candidates
-        if candidates:
-            with_candidates += 1
-        else:
-            without_candidates += 1
+        row["candidates"] = fetch_candidates(row["field_name"], row["business_meaning"])
 
-    print(f"  备选标准获取完成: {with_candidates} 行有备选标准，{without_candidates} 行无备选标准")
+    print(f"  备选标准获取完成: {len(rows)} 行")
     return {"rows": rows, "domain_results": [], "selection_results": []}
 
 
@@ -376,11 +217,6 @@ def check_domain_node(state: MappingGraphState) -> dict:
             row["domain_change_suggestion"] = ""
             continue
 
-        if not candidates:
-            row["domain_check_details"] = "无备选标准"
-            row["domain_change_suggestion"] = ""
-            continue
-
         if not data_example:
             # 无数据示例，无法检测冲突，全部通过
             for ci in range(len(candidates)):
@@ -390,7 +226,6 @@ def check_domain_node(state: MappingGraphState) -> dict:
             continue
 
         # 非标志类，有数据示例：逐个检测冲突
-        available_domains = _MOCK_DOMAINS.get(field_type, [])
         details = []
 
         for ci, cand in enumerate(candidates):
@@ -409,26 +244,22 @@ def check_domain_node(state: MappingGraphState) -> dict:
                     "row_index": idx,
                     "candidate_index": ci,
                     "field_name": row["field_name"],
-                    "field_type": field_type,
-                    "data_example": data_example,
-                    "current_domain_id": cand["domain_id"],
-                    "current_domain_name": cand["domain_name"],
-                    "current_domain_type": cand["domain_type"],
-                    "available_domains": [
-                        d for d in available_domains
-                        if d["domain_id"] != cand["domain_id"]
-                    ],
+                    # TODO: 通过接口获取可用域列表，传入参数是字典所属类型，返回当前类型下的全量域
+                    # 通过_detect_domain_conflict，筛出无冲突的域
+                    # 再实现一个函数实现域类型最小化原则，比如能用n就不用an
+                    # 还存在一个问题，就是备选域的域类型长度可能很大，大模型可能最后选了一个特别大的
+                    "available_domains": [],
                 })
 
         row["domain_check_details"] = "; ".join(details)
 
-    # === 调用 LLM 检测冲突项 ===
+    # === 调用 LLM 换域判断 ===
     if llm_check_items:
-        print(f"  共 {len(llm_check_items)} 条冲突项需要 LLM 判断")
+        print(f"  共 {len(llm_check_items)} 条需要 LLM 换域判断")
         llm = get_llm()
         llm_results = check_domain_conflict(llm, llm_check_items)
     else:
-        print(f"  无冲突项需要 LLM 判断")
+        print(f"  无需换域判断")
         llm_results = []
 
     # === 第二遍：应用 LLM 结果，过滤候选标准 ===

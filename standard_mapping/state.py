@@ -58,15 +58,14 @@ class MappingGraphState(TypedDict):
 # ============================================================
 
 class DomainCheckItem(BaseModel):
-    """单条域类型冲突检测结果。"""
+    """单条换域判断结果。"""
     row_index: int = Field(description="行号，与输入数据中的row_index对应")
     candidate_index: int = Field(description="备选标准在列表中的索引位置")
-    has_conflict: bool = Field(description="当前域类型是否与数据示例冲突")
-    needs_domain_change: bool = Field(description="是否需要换域")
-    new_domain_id: str = Field(default="", description="新域编号（如需换域）")
-    new_domain_name: str = Field(default="", description="新域名称（如需换域）")
-    new_domain_type: str = Field(default="", description="新域类型（如需换域）")
-    reason: str = Field(description="判断过程和原因说明，需详细描述分析过程")
+    needs_domain_change: bool = Field(description="是否找到合适的替代域")
+    new_domain_id: str = Field(default="", description="新域编号（如找到替代域）")
+    new_domain_name: str = Field(default="", description="新域名称（如找到替代域）")
+    new_domain_type: str = Field(default="", description="新域类型（如找到替代域）")
+    reason: str = Field(description="判断过程，包括各候选域中文名与字典中文名的匹配分析")
 
 
 class DomainCheckResult(BaseModel):
