@@ -422,14 +422,6 @@ def insert_standards(client, records, collection_name=None, batch_size=500):
 # ============================================================
 
 
-def _f(hit, field):
-    """安全提取 hit 中的字段值。"""
-
-    entity = hit.get("entity", {}) if isinstance(hit, dict) else {}
-
-    return entity.get(field, "")
-
-
 @with_retry
 def search(query_name, query_meaning, top_k=10, collection_name=None, client=None):
     """混合检索：稠密 top_k + 稀疏 top_k -> 合并去重。
@@ -509,8 +501,8 @@ def search(query_name, query_meaning, top_k=10, collection_name=None, client=Non
         sid = hit["standard_id"]
 
         dense_map[sid] = {
-            "name_text": _f(hit, "name_text"),
-            "meaning_text": _f(hit, "meaning_text"),
+            "name_text": hit["entity"]["name_text"],
+            "meaning_text": hit["entity"]["meaning_text"],
             "score": 0.5 * hit["distance"],
         }
 
@@ -522,8 +514,8 @@ def search(query_name, query_meaning, top_k=10, collection_name=None, client=Non
 
         else:
             dense_map[sid] = {
-                "name_text": _f(hit, "name_text"),
-                "meaning_text": _f(hit, "meaning_text"),
+                "name_text": hit["entity"]["name_text"],
+                "meaning_text": hit["entity"]["meaning_text"],
                 "score": 0.5 * hit["distance"],
             }
 
@@ -553,8 +545,8 @@ def search(query_name, query_meaning, top_k=10, collection_name=None, client=Non
         sid = hit["standard_id"]
 
         sparse_map[sid] = {
-            "name_text": _f(hit, "name_text"),
-            "meaning_text": _f(hit, "meaning_text"),
+            "name_text": hit["entity"]["name_text"],
+            "meaning_text": hit["entity"]["meaning_text"],
             "score": 0.5 * hit["distance"],
         }
 
@@ -566,8 +558,8 @@ def search(query_name, query_meaning, top_k=10, collection_name=None, client=Non
 
         else:
             sparse_map[sid] = {
-                "name_text": _f(hit, "name_text"),
-                "meaning_text": _f(hit, "meaning_text"),
+                "name_text": hit["entity"]["name_text"],
+                "meaning_text": hit["entity"]["meaning_text"],
                 "score": 0.5 * hit["distance"],
             }
 
