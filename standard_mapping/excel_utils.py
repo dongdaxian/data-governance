@@ -14,7 +14,6 @@ from standard_mapping.constants import (
     COL_MAPPING_RESULT,
     COL_SELECTED_STD_ID,
     COL_SELECTED_STD_NAME,
-    COL_DOMAIN_CHANGE,
     COL_LLM_REASON,
 )
 from standard_mapping.state import FieldToMap
@@ -65,7 +64,6 @@ def read_excel(file_path: str) -> list[FieldToMap]:
             # 初始化结果字段
             candidates=[],
             domain_check_details="",
-            domain_change_suggestion="",
             mapping_result="",
             selected_std_id="",
             selected_std_name="",
@@ -80,7 +78,7 @@ def read_excel(file_path: str) -> list[FieldToMap]:
 def write_excel(file_path: str, rows: list[FieldToMap], input_file: str):
     """将落标结果写入 Excel。
 
-    保留原始数据列，追加五列：落标结果、选中标准编号、选中标准名称、换域建议、LLM判断过程。
+    保留原始数据列，追加四列：落标结果、选中标准编号、选中标准名称、LLM判断过程。
     输出格式：第1行合并表头（"基本信息" + "落标结果"），第2行列名，第3行+数据。
     """
     # 读取原始 Excel（跳过合并表头行，从第2行开始）
@@ -93,12 +91,11 @@ def write_excel(file_path: str, rows: list[FieldToMap], input_file: str):
     df[COL_MAPPING_RESULT] = [r["mapping_result"] for r in sorted_rows]
     df[COL_SELECTED_STD_ID] = [r["selected_std_id"] for r in sorted_rows]
     df[COL_SELECTED_STD_NAME] = [r["selected_std_name"] for r in sorted_rows]
-    df[COL_DOMAIN_CHANGE] = [r["domain_change_suggestion"] for r in sorted_rows]
     df[COL_LLM_REASON] = [r["llm_reason"] for r in sorted_rows]
 
     df.to_excel(file_path, index=False)
 
-    # 在第1行插入合并表头："基本信息"（原始列）+ "落标结果"（新增5列）
+    # 在第1行插入合并表头："基本信息"（原始列）+ "落标结果"（新增4列）
     wb = load_workbook(file_path)
     ws = wb.active
     ws.insert_rows(1)

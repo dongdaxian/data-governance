@@ -35,7 +35,6 @@ class FieldToMap(TypedDict):
 
     # check_domain 节点产出
     domain_check_details: str  # 域检查详情
-    domain_change_suggestion: str  # 换域建议
 
     # select_standard 节点产出
     mapping_result: str        # "复用已有标准" / "复用已有标准但扩展业务定义" / "新增标准"
@@ -56,22 +55,6 @@ class MappingGraphState(TypedDict):
 # ============================================================
 # Pydantic Schema -- 用于 LLM with_structured_output
 # ============================================================
-
-class DomainCheckItem(BaseModel):
-    """单条换域判断结果。"""
-    row_index: int = Field(description="行号，与输入数据中的row_index对应")
-    candidate_index: int = Field(description="备选标准在列表中的索引位置")
-    needs_domain_change: bool = Field(description="是否找到合适的替代域")
-    new_domain_id: str = Field(default="", description="新域编号（如找到替代域）")
-    new_domain_name: str = Field(default="", description="新域名称（如找到替代域）")
-    new_domain_type: str = Field(default="", description="新域类型（如找到替代域）")
-    reason: str = Field(description="判断过程，包括各候选域中文名与字典中文名的匹配分析")
-
-
-class DomainCheckResult(BaseModel):
-    """批量域类型冲突检测结果。"""
-    results: list[DomainCheckItem] = Field(description="每条备选标准的域检查结果列表")
-
 
 class StandardSelectionItem(BaseModel):
     """单条标准选择结果。"""

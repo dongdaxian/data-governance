@@ -5,7 +5,7 @@
     ↓
   load_and_fetch   -- 读取 Excel，筛选非枚举类字段，调用接口获取备选标准
     ↓
-  check_domain     -- 域类型精筛（标志类恒定通过，非标志类正则检测冲突+LLM换域）
+  check_domain     -- 域类型精筛（标志类恒定通过，非标志类正则检测冲突，冲突则淘汰）
     ↓
   select_standard  -- LLM 标准选择（复用/复用扩展/新增）
     ↓
@@ -16,7 +16,7 @@
 
 from standard_mapping.state import MappingGraphState, FieldToMap, CandidateStandard
 from standard_mapping.excel_utils import read_excel, write_excel
-from standard_mapping.llm import get_llm, check_domain_conflict, select_standard
+from standard_mapping.llm import get_llm, select_standard
 from standard_mapping.constants import (
     NON_ENUM_TYPES,
     RE_N_VAR, RE_N_FIX,
@@ -33,12 +33,13 @@ from standard_mapping.constants import (
 # 备选标准接口（TODO: 替换为实际接口调用）
 # ============================================================
 
-def fetch_candidates(field_name: str, business_meaning: str) -> list[CandidateStandard]:
+def fetch_candidates(field_name: str, business_meaning: str, field_type: str) -> list[CandidateStandard]:
     """调用外部接口获取备选标准列表。
 
     Args:
         field_name: 字段中文名
         business_meaning: 业务含义
+        field_type: 字段所属类型
 
     Returns:
         备选标准列表，每项包含 std_id/std_name/std_type/business_definition/
@@ -178,7 +179,7 @@ def load_and_fetch_node(state: MappingGraphState) -> dict:
 
     # 调用接口获取备选标准
     for row in rows:
-        row["candidates"] = fetch_candidates(row["field_name"], row["business_meaning"])
+        row["candidates"] = fetch_candidates(row["field_name"], row["business_meaning"], row["field_type"])
 
     print(f"  备选标准获取完成: {len(rows)} 行")
     return {"rows": rows, "domain_results": [], "selection_results": []}
@@ -189,139 +190,53 @@ def load_and_fetch_node(state: MappingGraphState) -> dict:
 # ============================================================
 
 def check_domain_node(state: MappingGraphState) -> dict:
-    """域类型冲突检测与换域建议。
+    """域类型冲突检测，冲突的备选标准直接淘汰。
 
     - 标志类: 所有备选标准恒定通过，无需域检查
-    - 非标志类: 先用正则规则检测冲突，冲突时调用 LLM 寻找替代域
+    - 非标志类: 用正则规则检测冲突，冲突则淘汰该备选标准
     """
     print("\n=== 步骤 2/4: 域类型精筛 ===")
     rows = state["rows"]
 
-    # === 第一遍：正则检测冲突，收集需要 LLM 判断的项 ===
-    llm_check_items: list[dict] = []
-    # 每个候选的检测结果: {row_index: [(candidate_index, "pass"|"conflict"), ...]}
-    check_status: dict[int, list[tuple[int, str]]] = {}
-
+    domain_results = []
     for row in rows:
         idx = row["index"]
         field_type = row["field_type"]
         data_example = row["data_example"]
         candidates = row["candidates"]
-        check_status[idx] = []
 
         if field_type == "标志类":
-            # 标志类恒定通过
-            for ci in range(len(candidates)):
-                check_status[idx].append((ci, "pass"))
             row["domain_check_details"] = "标志类字段，域类型恒定通过"
-            row["domain_change_suggestion"] = ""
             continue
 
         if not data_example:
-            # 无数据示例，无法检测冲突，全部通过
-            for ci in range(len(candidates)):
-                check_status[idx].append((ci, "pass"))
             row["domain_check_details"] = "无数据示例，跳过域类型冲突检测"
-            row["domain_change_suggestion"] = ""
             continue
 
-        # 非标志类，有数据示例：逐个检测冲突
+        # 非标志类，有数据示例：逐个检测冲突，冲突则淘汰
+        new_candidates = []
+        eliminated = []
         details = []
 
-        for ci, cand in enumerate(candidates):
+        for cand in candidates:
             conflict = _detect_domain_conflict(cand["domain_type"], data_example)
             if not conflict:
-                check_status[idx].append((ci, "pass"))
-                details.append(
-                    f"备选标准{cand['std_id']}域类型{cand['domain_type']}无冲突"
-                )
-            else:
-                check_status[idx].append((ci, "conflict"))
-                details.append(
-                    f"备选标准{cand['std_id']}域类型{cand['domain_type']}与数据示例'{data_example}'冲突"
-                )
-                llm_check_items.append({
-                    "row_index": idx,
-                    "candidate_index": ci,
-                    "field_name": row["field_name"],
-                    # TODO: 通过接口获取可用域列表，传入参数是字典所属类型，返回当前类型下的全量域
-                    # 通过_detect_domain_conflict，筛出无冲突的域
-                    # 再实现一个函数实现域类型最小化原则，比如能用n就不用an
-                    # 还存在一个问题，就是备选域的域类型长度可能很大，大模型可能最后选了一个特别大的
-                    "available_domains": [],
-                })
-
-        row["domain_check_details"] = "; ".join(details)
-
-    # === 调用 LLM 换域判断 ===
-    if llm_check_items:
-        print(f"  共 {len(llm_check_items)} 条需要 LLM 换域判断")
-        llm = get_llm()
-        llm_results = check_domain_conflict(llm, llm_check_items)
-    else:
-        print(f"  无需换域判断")
-        llm_results = []
-
-    # === 第二遍：应用 LLM 结果，过滤候选标准 ===
-    llm_map: dict[tuple[int, int], dict] = {}
-    for lr in llm_results:
-        llm_map[(lr["row_index"], lr["candidate_index"])] = lr
-
-    domain_results = []
-    for row in rows:
-        idx = row["index"]
-        if idx not in check_status:
-            continue
-
-        candidates = row["candidates"]
-        new_candidates = []
-        suggestions = []
-        eliminated = []
-
-        for ci, status in check_status[idx]:
-            if ci >= len(candidates):
-                continue
-            cand = candidates[ci]
-
-            if status == "pass":
                 new_candidates.append(cand)
-            elif status == "conflict":
-                lr = llm_map.get((idx, ci))
-                if lr and lr["needs_domain_change"]:
-                    # 换域成功，更新候选标准的域信息
-                    old_domain = f"{cand['domain_name']}({cand['domain_type']})"
-                    cand["domain_id"] = lr["new_domain_id"]
-                    cand["domain_name"] = lr["new_domain_name"]
-                    cand["domain_type"] = lr["new_domain_type"]
-                    new_domain = f"{cand['domain_name']}({cand['domain_type']})"
-                    new_candidates.append(cand)
-                    suggestions.append(
-                        f"如使用标准{cand['std_id']}，需将域从 {old_domain} 换为 {new_domain}"
-                    )
-                    domain_results.append({
-                        "row_index": idx,
-                        "candidate_index": ci,
-                        "result": "换域",
-                        "reason": lr["reason"],
-                    })
-                else:
-                    # 无替代域，淘汰该备选标准
-                    eliminated.append(cand["std_id"])
-                    domain_results.append({
-                        "row_index": idx,
-                        "candidate_index": ci,
-                        "result": "淘汰",
-                        "reason": lr["reason"] if lr else "无LLM结果",
-                    })
+                details.append(f"备选标准{cand['std_id']}域类型{cand['domain_type']}无冲突")
+            else:
+                eliminated.append(cand["std_id"])
+                details.append(f"备选标准{cand['std_id']}域类型{cand['domain_type']}与数据示例'{data_example}'冲突，已淘汰")
 
         row["candidates"] = new_candidates
-        row["domain_change_suggestion"] = "; ".join(suggestions) if suggestions else ""
+        row["domain_check_details"] = "; ".join(details)
 
         if eliminated:
-            row["domain_check_details"] += f"; 已淘汰备选标准: {', '.join(eliminated)}"
+            domain_results.append({
+                "row_index": idx,
+                "eliminated": eliminated,
+            })
 
-    passed = sum(1 for r in rows if r["candidates"])
-    print(f"  域类型精筛完成: {passed} 行保留备选标准，{len(rows) - passed} 行无备选标准")
+    print(f"  域类型筛选完成")
     return {"rows": rows, "domain_results": domain_results}
 
 
@@ -330,7 +245,7 @@ def check_domain_node(state: MappingGraphState) -> dict:
 # ============================================================
 
 def select_standard_node(state: MappingGraphState) -> dict:
-    """调用 LLM 从精筛后的备选标准中选择最合适的标准。
+    """调用 LLM 从备选标准中选择最合适的标准。
 
     无备选标准的行直接标记为"新增标准"。
     """
@@ -347,13 +262,12 @@ def select_standard_node(state: MappingGraphState) -> dict:
             row["mapping_result"] = "新增标准"
             row["selected_std_id"] = ""
             row["selected_std_name"] = ""
-            row["llm_reason"] = "无备选标准或备选标准经域类型精筛后全部淘汰，直接新增标准"
+            row["llm_reason"] = "无备选标准或备选标准经域类型筛选后全部淘汰，直接新增标准"
             direct_new_count += 1
         else:
             rows_to_select.append({
                 "row_index": row["index"],
                 "field_name": row["field_name"],
-                "field_type": row["field_type"],
                 "business_meaning": row["business_meaning"],
                 "data_example": row["data_example"],
                 "candidates": [
@@ -361,7 +275,6 @@ def select_standard_node(state: MappingGraphState) -> dict:
                         "std_id": c["std_id"],
                         "std_name": c["std_name"],
                         "business_definition": c["business_definition"],
-                        "domain_type": c["domain_type"],
                     }
                     for c in row["candidates"]
                 ],

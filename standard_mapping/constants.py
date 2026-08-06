@@ -35,7 +35,6 @@ INPUT_COLUMNS = {
 COL_MAPPING_RESULT = "落标结果"
 COL_SELECTED_STD_ID = "选中标准编号"
 COL_SELECTED_STD_NAME = "选中标准名称"
-COL_DOMAIN_CHANGE = "换域建议"
 COL_LLM_REASON = "LLM判断过程"
 
 # ============================================================
