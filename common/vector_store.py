@@ -595,12 +595,7 @@ def search(query_name, query_meaning, top_k=10, collection_name=None, client=Non
                 "source": "sparse",
             }
 
-    final = sorted(
-        results.values(),
-        key=lambda x: -(x["dense_score"] or x["sparse_score"]),
-    )
-
-    return final
+    return list(results.values())
 
 
 # ============================================================
