@@ -1,10 +1,11 @@
+﻿# -*- coding: utf-8 -*-
 """LangGraph 图定义。
 
 构建数据质量检查的工作流图，使用并行节点加速 LLM 调用。
 
 图拓扑：
-  START -> load_excel -> check_basic -> ┌─ check_semantic ──┐
-                                     └─ normalize_enum ──┘ -> combine_results -> write_excel -> END
+  START -> load_excel -> check_rules -> +-> check_semantic ->+
+                                        +-> normalize_enum  ->+ -> combine_results -> write_excel -> END
 
 check_semantic 和 normalize_enum 并行执行，各自写入独立的状态字段，
 combine_results 作为 barrier 节点等待两者完成后汇总。
@@ -15,7 +16,7 @@ from langgraph.graph import StateGraph, START, END
 from quality_check.state import GraphState
 from quality_check.nodes import (
     load_excel_node,
-    check_basic_node,
+    check_rules_node,
     check_semantic_node,
     normalize_enum_node,
     combine_results_node,
@@ -29,7 +30,7 @@ def build_graph():
 
     # 注册节点
     workflow.add_node("load_excel", load_excel_node)
-    workflow.add_node("check_basic", check_basic_node)
+    workflow.add_node("check_rules", check_rules_node)
     workflow.add_node("check_semantic", check_semantic_node)
     workflow.add_node("normalize_enum", normalize_enum_node)
     workflow.add_node("combine_results", combine_results_node)
@@ -37,11 +38,11 @@ def build_graph():
 
     # 串行边
     workflow.add_edge(START, "load_excel")
-    workflow.add_edge("load_excel", "check_basic")
+    workflow.add_edge("load_excel", "check_rules")
 
-    # 并行扇出：check_basic 完成后同时启动两个 LLM 节点
-    workflow.add_edge("check_basic", "check_semantic")
-    workflow.add_edge("check_basic", "normalize_enum")
+    # 并行扇出：check_rules 完成后同时启动两个 LLM 节点
+    workflow.add_edge("check_rules", "check_semantic")
+    workflow.add_edge("check_rules", "normalize_enum")
 
     # 并行汇合：两个 LLM 节点都完成后进入 combine_results（barrier）
     workflow.add_edge("check_semantic", "combine_results")

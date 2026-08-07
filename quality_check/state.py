@@ -1,3 +1,4 @@
+﻿# -*- coding: utf-8 -*-
 """LangGraph 状态定义 & LLM 结构化输出的 Pydantic Schema。"""
 
 from typing import TypedDict
@@ -6,14 +7,18 @@ from typing import TypedDict
 class RowData(TypedDict):
     """单行数据及其检查结果。"""
     index: int
-    field_name: str           # 字段中文名
+    table_name: str           # 中文表名
+    field_name: str           # 中文字段名
     field_type: str           # 字段所属类型
-    business_meaning: str     # 业务含义
+    domain_type: str          # 域类型
+    data_example: str         # 数据示例
+    is_enum: str              # 是否枚举（"是"/"否"）
+    business_meaning: str     # 业务定义
     enum_values: str          # 枚举值（原始）
 
-    # check_basic 节点产出
-    is_empty_issue: bool      # 是否存在必填列为空
-    empty_details: str        # 空值详情
+    # check_rules 节点产出
+    rule_issues: list[str]    # 规则检查问题列表（检查 0-5）
+    rule_passed: bool         # 规则检查是否全部通过
 
     # check_semantic 节点产出
     is_meaningful: bool       # 业务含义是否有效
@@ -25,7 +30,7 @@ class RowData(TypedDict):
 
     # combine_results 节点产出
     check_result: str         # "通过" / "不通过"
-    fail_reason: str          # 不通过原因
+    fail_reason: str          # 不通过原因汇总
 
 
 class GraphState(TypedDict):
@@ -33,9 +38,8 @@ class GraphState(TypedDict):
     rows: list[RowData]
     input_file: str
     output_file: str
-    # 并行节点各自写入的字段（避免写冲突）
-    semantic_results: list[dict]   # check_semantic 节点产出
-    enum_results: list[dict]       # normalize_enum 节点产出
+    semantic_results: list[dict]
+    enum_results: list[dict]
 
 
 # ============================================================

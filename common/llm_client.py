@@ -38,6 +38,8 @@ def call_with_retry(llm: ChatOpenAI, schema, system_text: str, user_text: str):
     for attempt in range(MAX_RETRIES):
         try:
             result = structured_llm.invoke(messages)
+            if result is None:
+                raise ValueError("LLM returned None (function call not invoked)")
             return result
         except Exception as e:
             if attempt == MAX_RETRIES - 1:
