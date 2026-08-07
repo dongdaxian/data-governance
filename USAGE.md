@@ -53,7 +53,8 @@
 | 变量名 | 默认值 | 说明 |
 |---|---|---|
 | `MILVUS_PROXY` | `auto` | `auto`=自动检测系统代理，`none`=不使用代理，或直接填代理地址 |
-| `MILVUS_COLLECTION` | `dict_non_enum` | Milvus 集合名称 |
+| `MILVUS_COLLECTION` | `dict_non_enum` | 旧版单集合（已废弃，按类型分集合存储） |
+| `TYPE_COLLECTION_MAP` | - | 按字段所属类型自动路由到对应集合（见下表） |
 | `EMBED_DEVICE` | `cpu` | 向量化设备：`cpu` 或 `cuda` |
 | `EMBED_MODEL_NAME` | `BAAI/bge-large-zh-v1.5` | 向量模型名称 |
 
@@ -64,7 +65,7 @@ python scripts/vector_build.py [选项]
   --limit N        仅处理前 N 条（测试用）
   --dry-run        仅向量化，不写入 Milvus
   --input PATH     自定义输入 Excel 路径
-  --collection NAME  自定义集合名
+  --cleanup-legacy 删除旧的 dict_non_enum 集合
   --no-backup      不生成 Parquet 备份
 ```
 
@@ -73,7 +74,7 @@ python scripts/vector_build.py [选项]
 ```python
 from common.vector_store import search
 
-results = search("客户号", "客户的唯一编号", top_k=10)
+results = search("客户号", "客户的唯一编号", top_k=10, field_type="编码类")
 for r in results:
     print(r["standard_id"], r["name_text"], r["dense_score"], r["sparse_score"], r["source"])
 ```
@@ -97,7 +98,15 @@ set TRANSFORMERS_OFFLINE=1
 
 ## Schema 说明
 
-集合 `dict_non_enum` 共 7 个字段：standard_id（主键）、name_text、name_dense(1024)、name_sparse(BM25)、meaning_text、meaning_dense(1024)、meaning_sparse(BM25)。
+按字段所属类型分 5 个集合，每个集合 schema 相同，共 7 个字段：standard_id（主键）、name_text、name_dense(1024)、name_sparse(BM25)、meaning_text、meaning_dense(1024)、meaning_sparse(BM25)。
+
+| 字段所属类型 | 集合名 |
+|---|---|
+| 编码类 | dict_encode |
+| 文本类 | dict_text |
+| 数值类 | dict_number |
+| 日期时间类 | dict_datetime |
+| 标志类 | dict_flag |
 
 ## 检索逻辑
 

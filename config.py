@@ -86,6 +86,15 @@ MILVUS_TOKEN = os.getenv('MILVUS_TOKEN', '')
 
 MILVUS_COLLECTION = os.getenv('MILVUS_COLLECTION', 'dict_non_enum')
 
+# 按字段所属类型分 collection 存储，检索时只在对应类型的 collection 里搜
+TYPE_COLLECTION_MAP = {
+    "编码类": "dict_encode",
+    "文本类": "dict_text",
+    "数值类": "dict_number",
+    "日期时间类": "dict_datetime",
+    "标志类": "dict_flag",
+}
+
 
 
 # 代理配置：VPN/梯子场景下 gRPC 需要走 HTTP 代理隧道

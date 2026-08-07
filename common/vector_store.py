@@ -73,6 +73,7 @@ from config import (
     MILVUS_URI,
     MILVUS_TOKEN,
     MILVUS_COLLECTION,
+    TYPE_COLLECTION_MAP,
     MILVUS_PROXY,
     EMBED_MODEL_NAME,
     EMBED_DIMENSION,
@@ -423,7 +424,7 @@ def insert_standards(client, records, collection_name=None, batch_size=500):
 
 
 @with_retry
-def search(query_name, query_meaning, top_k=10, collection_name=None, client=None):
+def search(query_name, query_meaning, top_k=10, field_type=None, collection_name=None, client=None):
     """混合检索：稠密 top_k + 稀疏 top_k -> 合并去重。
 
 
@@ -462,7 +463,8 @@ def search(query_name, query_meaning, top_k=10, collection_name=None, client=Non
 
     """
 
-    collection_name = collection_name or MILVUS_COLLECTION
+    if collection_name is None:
+        collection_name = TYPE_COLLECTION_MAP.get(field_type, MILVUS_COLLECTION)
 
     if client is None:
         client = get_client()
