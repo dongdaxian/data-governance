@@ -17,16 +17,8 @@
 from standard_mapping.state import MappingGraphState, FieldToMap, CandidateStandard
 from standard_mapping.excel_utils import read_excel, write_excel
 from standard_mapping.llm import get_llm, select_standard
-from standard_mapping.constants import (
-    NON_ENUM_TYPES,
-    RE_N_VAR, RE_N_FIX,
-    RE_A_VAR, RE_A_FIX,
-    RE_AN_VAR, RE_AN_FIX,
-    RE_ANC_VAR, RE_ANC_FIX,
-    RE_I_INT, RE_I_DEC,
-    RE_DATE, RE_TIME, RE_DATETIME, RE_TIMESTAMP,
-    RE_CHINESE, RE_DIGIT,
-)
+from standard_mapping.constants import NON_ENUM_TYPES
+from common.domain_rules import check_data_example
 
 
 # ============================================================
@@ -54,7 +46,7 @@ def fetch_candidates(field_name: str, business_meaning: str, field_type: str) ->
 # ============================================================
 
 def _detect_domain_conflict(domain_type: str, data_example: str) -> bool:
-    """使用正则规则检测域类型与数据示例是否冲突。
+    """检测域类型与数据示例是否冲突（委托 common.domain_rules 统一校验）。
 
     Args:
         domain_type: 域类型格式（如 n..(10), i(15,2), DATE 等）
@@ -65,104 +57,10 @@ def _detect_domain_conflict(domain_type: str, data_example: str) -> bool:
     """
     if not data_example or not domain_type:
         return False
-
-    dt = domain_type.strip()
-    example = str(data_example).strip()
-
-    # 无效数据示例
-    if not example or example in ("无", "暂无", "无示例"):
-        return False
-
-    # 多个示例取第一个
-    for sep in [";", "；", ",", "，", "、"]:
-        if sep in example:
-            example = example.split(sep)[0].strip()
-            break
-
-    if not example:
-        return False
-
-    # n..(x) / n!(x): 只允许数字字符
-    m_fix = RE_N_FIX.match(dt)
-    m_var = RE_N_VAR.match(dt)
-    if m_fix or m_var:
-        if not example.isdigit():
-            return True
-        if m_fix and len(example) != int(m_fix.group(1)):
-            return True
-        if m_var and len(example) > int(m_var.group(1)):
-            return True
-        return False
-
-    # a..(x) / a!(x): 只允许字母+特殊符号（不允许数字和汉字）
-    if RE_A_FIX.match(dt) or RE_A_VAR.match(dt):
-        if RE_DIGIT.search(example) or RE_CHINESE.search(example):
-            return True
-        return False
-
-    # an..(x) / an!(x): 数字+字母+特殊符号（不允许汉字）
-    if RE_AN_FIX.match(dt) or RE_AN_VAR.match(dt):
-        if RE_CHINESE.search(example):
-            return True
-        return False
-
-    # anc..(x) / anc!(x): 汉字+数字+字母+特殊符号（基本不冲突）
-    if RE_ANC_FIX.match(dt) or RE_ANC_VAR.match(dt):
-        return False
-
-    # i(x): x位整数
-    m = RE_I_INT.match(dt)
-    if m:
-        if not example.isdigit():
-            return True
-        if len(example) != int(m.group(1)):
-            return True
-        return False
-
-    # i(x, y): x位整数y位小数
-    m = RE_I_DEC.match(dt)
-    if m:
-        int_len = int(m.group(1))
-        dec_len = int(m.group(2))
-        if "." in example:
-            parts = example.split(".", 1)
-            int_part, dec_part = parts[0], parts[1]
-            if not int_part.isdigit() or not dec_part.isdigit():
-                return True
-            if len(int_part) != int_len or len(dec_part) != dec_len:
-                return True
-        else:
-            if not example.isdigit():
-                return True
-            if len(example) != int_len:
-                return True
-        return False
-
-    # DATE: 年月日，8位数字
-    if RE_DATE.match(dt):
-        if not (example.isdigit() and len(example) == 8):
-            return True
-        return False
-
-    # TIME: 时分秒，6位数字
-    if RE_TIME.match(dt):
-        if not (example.isdigit() and len(example) == 6):
-            return True
-        return False
-
-    # DATETIME / TIMESTAMP: 年月日时分秒，14位数字
-    if RE_DATETIME.match(dt) or RE_TIMESTAMP.match(dt):
-        if not (example.isdigit() and len(example) == 14):
-            return True
-        return False
-
-    # 未知域类型，记录警告
-    import logging
-    logging.warning(f"未知域类型: {dt}，数据示例: {example}，跳过冲突检测")
-    return False
+    ok, _ = check_data_example(domain_type, data_example)
+    return not ok
 
 
-# ============================================================
 # 节点 1: 加载 Excel + 获取备选标准
 # ============================================================
 

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """LangGraph 节点定义。
 
 图结构：
@@ -25,187 +25,9 @@ from quality_check.excel_utils import read_excel, write_excel
 from quality_check.llm import get_llm, check_business_meaning, normalize_enum_values
 from quality_check.constants import (
     VALID_FIELD_TYPES,
-    DOMAIN_PATTERNS,
-    DOMAIN_CHAR_CLASS,
     DOMAIN_WHITELIST,
-    INVALID_EXAMPLE_PLACEHOLDERS,
 )
-
-
-# ============================================================
-# 域类型解析
-# ============================================================
-
-def _parse_domain_type(dt_str):
-    """解析域类型字符串，返回 (pattern_key, match_obj) 或 (None, None)。"""
-    dt = dt_str.strip()
-    for key, regex in DOMAIN_PATTERNS:
-        m = regex.match(dt)
-        if m:
-            return key, m
-    return None, None
-
-
-# ============================================================
-# 字符类别判断
-# ============================================================
-
-def _is_chinese_char(ch):
-    return "\u4e00" <= ch <= "\u9fff"
-
-
-def _is_digit_char(ch):
-    return ch in "0123456789"
-
-
-def _is_letter_char(ch):
-    return ("a" <= ch <= "z") or ("A" <= ch <= "Z")
-
-
-def _check_char_class(example, char_class):
-    """检查数据示例的每个字符是否符合域类型的字符类别限制。
-
-    Args:
-        example: 数据示例字符串
-        char_class: n/a/an/anc/c/nc/ac/i/date/time/datetime/timestamp
-
-    Returns:
-        (is_valid: bool, reason: str)
-    """
-    for ch in example:
-        if char_class == "n":
-            if not (_is_digit_char(ch) or ch in "-:/T "):
-                return False, f"包含非法字符'{ch}'（数字字符类仅允许数字）"
-        elif char_class == "a":
-            if _is_digit_char(ch) or _is_chinese_char(ch):
-                return False, f"包含不允许的字符'{ch}'（字母+特殊符号类不允许数字和汉字）"
-        elif char_class == "an":
-            if _is_chinese_char(ch):
-                return False, f"包含汉字字符'{ch}'（数字+字母+特殊符号类不允许汉字）"
-        elif char_class == "anc":
-            pass  # 允许所有字符
-        elif char_class == "c":
-            if not _is_chinese_char(ch):
-                return False, f"包含非汉字字符'{ch}'（纯汉字类仅允许汉字）"
-        elif char_class == "nc":
-            if not (_is_digit_char(ch) or _is_chinese_char(ch)):
-                return False, f"包含不允许的字符'{ch}'（数字+汉字类仅允许数字和汉字）"
-        elif char_class == "ac":
-            if _is_digit_char(ch):
-                return False, f"包含数字字符'{ch}'（字母+汉字类不允许数字）"
-        elif char_class == "i":
-            if not (_is_digit_char(ch) or ch == "."):
-                return False, f"包含非数字字符'{ch}'（数值类仅允许数字和小数点）"
-        elif char_class in ("date", "time", "datetime", "timestamp"):
-            if not (_is_digit_char(ch) or ch in "-:/T "):
-                return False, f"包含非法字符'{ch}'（日期时间类仅允许数字和分隔符-:/空格/T）"
-    return True, ""
-
-
-def _check_length(example, domain_key, match):
-    """检查数据示例的长度/精度是否符合域类型的限制。
-
-    Returns:
-        (is_valid: bool, reason: str)
-    """
-    is_nolimit = "_nolimit" in domain_key
-    if is_nolimit:
-        return True, ""
-
-    is_fixed = "_fix" in domain_key
-
-    # n/a/an/anc/c/nc/ac 变长或定长
-    if domain_key in (
-        "n_var", "n_fix", "a_var", "a_fix",
-        "an_var", "an_fix", "anc_var", "anc_fix",
-        "c_var", "c_fix", "nc_var", "nc_fix",
-        "ac_var", "ac_fix",
-    ):
-        limit = int(match.group(1))
-        if is_fixed:
-            if len(example) != limit:
-                return False, f"长度应为{limit}位，实际{len(example)}位"
-        else:
-            if len(example) > limit:
-                return False, f"长度超过最大限制{limit}位，实际{len(example)}位"
-
-    # i(x): 最多 x 位整数
-    elif domain_key == "i_int":
-        x = int(match.group(1))
-        if "." in example:
-            return False, f"i({x})为整数类型，数据示例不应包含小数点"
-        if len(example) > x:
-            return False, f"整数部分不得超过{x}位，实际{len(example)}位"
-
-    # i(x, y): 最多 x 位整数 + 最多 y 位小数
-    elif domain_key == "i_dec":
-        x = int(match.group(1))
-        y = int(match.group(2))
-        if "." in example:
-            parts = example.split(".", 1)
-            int_part, dec_part = parts[0], parts[1]
-            if len(int_part) > x:
-                return False, f"整数部分不得超过{x}位，实际{len(int_part)}位"
-            if len(dec_part) > y:
-                return False, f"小数部分不得超过{y}位，实际{len(dec_part)}位"
-        else:
-            if len(example) > x:
-                return False, f"整数部分不得超过{x}位，实际{len(example)}位"
-
-    # 日期时间类：先去除分隔符，再校验数字位数
-    elif domain_key in ("date", "time", "datetime", "timestamp",
-                        "time_p", "datetime_p", "timestamp_p"):
-        digits = example.replace("-", "").replace(":", "").replace(" ", "").replace("T", "")
-        if domain_key == "date":
-            if len(digits) != 8:
-                return False, f"DATE应为8位日期数字（YYYYMMDD），实际{len(digits)}位"
-        elif domain_key == "time":
-            if len(digits) != 6:
-                return False, f"TIME应为6位时间数字（HHMMSS），实际{len(digits)}位"
-        elif domain_key in ("datetime", "timestamp"):
-            if len(digits) == 8:
-                return False, f"{domain_key.upper()}应为日期时间格式（YYYYMMDDHHmmss，14位），数据示例仅包含日期部分"
-            if len(digits) != 14:
-                return False, f"{domain_key.upper()}应为14位日期时间数字（YYYYMMDDHHmmss），实际{len(digits)}位"
-        # time_p / datetime_p / timestamp_p: 带精度参数，仅校验字符类型，不强制位数
-
-    return True, ""
-
-
-def _check_data_example(domain_key, match, data_example):
-    """检查数据示例是否符合域类型的字符类别和长度精度限制。
-
-    Args:
-        domain_key: 域类型 pattern key
-        match: 正则匹配对象
-        data_example: 数据示例字符串
-
-    Returns:
-        (is_valid: bool, reason: str)
-    """
-    # 预处理：多个示例取第一个
-    example = str(data_example).strip()
-    for sep in [";", "；", ",", "，", "/", "、"]:
-        if sep in example:
-            example = example.split(sep)[0].strip()
-            break
-
-    if not example or example in INVALID_EXAMPLE_PLACEHOLDERS:
-        return True, ""
-
-    # 字符类别检查
-    char_class = DOMAIN_CHAR_CLASS.get(domain_key)
-    if char_class:
-        ok, reason = _check_char_class(example, char_class)
-        if not ok:
-            return False, reason
-
-    # 长度/精度检查
-    ok, reason = _check_length(example, domain_key, match)
-    if not ok:
-        return False, reason
-
-    return True, ""
+from common.domain_rules import parse_domain_type, check_data_example
 
 
 # ============================================================
@@ -287,7 +109,7 @@ def check_rules_node(state: GraphState) -> dict:
         domain_key = None
         domain_match = None
         if row["domain_type"] and row["domain_type"].strip():
-            domain_key, domain_match = _parse_domain_type(row["domain_type"])
+            domain_key, domain_match = parse_domain_type(row["domain_type"])
             if domain_key is None:
                 issues.append(f"域类型'{row['domain_type']}'格式不合法")
             elif type_valid:
@@ -305,8 +127,8 @@ def check_rules_node(state: GraphState) -> dict:
 
         # 检查 4: 域类型与数据示例相符（依赖域类型格式可解析）
         if domain_key is not None and row["data_example"] and row["data_example"].strip():
-            ok, reason = _check_data_example(
-                domain_key, domain_match, row["data_example"]
+            ok, reason = check_data_example(
+                row["domain_type"], row["data_example"]
             )
             if not ok:
                 issues.append(
