@@ -149,42 +149,48 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
 
     """将检查结果写入 Excel。
 
-    保留原始数据列，追加三列：格式化枚举值、检查结果、说明。
+    完整复制输入文件作为输出（保留全部原始列、数据、合并表头和格式），
 
-    输出格式：第1行合并表头（"基本信息" + "数管反馈"），第2行列名，第3行+数据。
+    按第2行列名定位"格式化枚举值/检查结果/说明"三列，从第3行起填入检查结果。
 
     """
 
-    # 读取原始 Excel（跳过合并表头行，从第2行开始）
+    import shutil
 
-    df = pd.read_excel(input_file, header=1)
+    from openpyxl import load_workbook
 
-    # 按 rows 的 index 顺序追加结果列
+    # 1. 完整复制输入文件作为输出文件
+    shutil.copyfile(input_file, file_path)
 
+    # 2. 打开输出文件，从第2行（列名行）按列名精确匹配定位三个结果列
+    wb = load_workbook(file_path)
+    ws = wb.active
+
+    col_index: dict[str, int] = {}
+    for col in range(1, ws.max_column + 1):
+        name = _safe_str(ws.cell(row=2, column=col).value)
+        if name in (COL_FORMATTED_ENUM, COL_CHECK_RESULT, COL_FAIL_REASON):
+            col_index[name] = col
+
+    missing = [n for n in (COL_FORMATTED_ENUM, COL_CHECK_RESULT, COL_FAIL_REASON)
+               if n not in col_index]
+    if missing:
+        raise ValueError(
+            f"输入Excel缺少结果列: {missing}，请检查模板是否包含质量检查结果列。"
+        )
+
+    # 3. 从第3行起按 index 升序逐行填入结果
     sorted_rows = sorted(rows, key=lambda r: r["index"])
+    for r in sorted_rows:
+        excel_row = 3 + r["index"]
+        ws.cell(
+            row=excel_row, column=col_index[COL_FORMATTED_ENUM],
+            value=r["normalized_enum"] if r["normalized_enum"] else "",
+        )
+        ws.cell(row=excel_row, column=col_index[COL_CHECK_RESULT], value=r["check_result"])
+        ws.cell(row=excel_row, column=col_index[COL_FAIL_REASON], value=r["fail_reason"])
 
-    df[COL_FORMATTED_ENUM] = [
-
-        r["normalized_enum"] if r["normalized_enum"] else ""
-
-        for r in sorted_rows
-
-    ]
-
-    df[COL_CHECK_RESULT] = [r["check_result"] for r in sorted_rows]
-
-    df[COL_FAIL_REASON] = [r["fail_reason"] for r in sorted_rows]
-
-    total_cols = len(df.columns)
-    orig_col_count = total_cols - 3
-
-    with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, startrow=1)
-        ws = writer.book.active
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=orig_col_count)
-        ws.cell(row=1, column=1, value="基本信息")
-        ws.merge_cells(start_row=1, start_column=orig_col_count + 1, end_row=1, end_column=total_cols)
-        ws.cell(row=1, column=orig_col_count + 1, value="数管反馈")
+    wb.save(file_path)
 
     print(f"结果已写入: {file_path}")
 
