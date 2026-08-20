@@ -55,18 +55,7 @@ sys.modules.setdefault("numexpr", None)
 sys.modules.setdefault("bottleneck", None)
 
 
-# 2. 禁止 transformers 导入 TensorFlow（h5py 与 NumPy 2.x 不兼容）
-
-os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
-
-os.environ.setdefault("USE_TF", "0")
-
-
-# 3. HuggingFace 镜像配置
-
-os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
-
-os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+# 2. TRANSFORMERS_NO_TF / USE_TF 已移至 config.py（确保在 langchain 导入链之前生效）
 
 
 from config import (
@@ -83,7 +72,7 @@ from config import (
 )
 
 
-# 4. 代理配置：必须在设置 NO_PROXY 之前执行
+# 3. 代理配置：必须在设置 NO_PROXY 之前执行
 
 
 def _setup_proxy():
@@ -117,7 +106,7 @@ _logger = logging.getLogger(__name__)
 _setup_proxy()
 
 
-# 5. NO_PROXY：HF 域名绕过代理直连镜像（在 _setup_proxy 之后设置）
+# 4. NO_PROXY：HF 域名绕过代理直连镜像（在 _setup_proxy 之后设置）
 
 _hf_domains = (
     "hf-mirror.com,huggingface.co,cdn-lfs.huggingface.co,"
@@ -245,6 +234,7 @@ def embed_texts(texts, is_query=False):
 
 
 _client = None
+_loaded_collections = set()
 
 
 @with_retry
@@ -378,11 +368,18 @@ def drop_collection(client, collection_name=None):
 
 @with_retry
 def ensure_loaded(client, collection_name=None):
-    """确保集合已加载到内存（检索前必须加载）。"""
+    """确保集合已加载到内存（检索前必须加载）。
+
+    使用模块级集合缓存已加载的 collection，避免重复调用 load_collection。
+    """
 
     collection_name = collection_name or MILVUS_COLLECTION
 
+    if collection_name in _loaded_collections:
+        return
+
     client.load_collection(collection_name)
+    _loaded_collections.add(collection_name)
 
 
 # ============================================================
@@ -464,7 +461,12 @@ def search(query_name, query_meaning, top_k=10, field_type=None, collection_name
     """
 
     if collection_name is None:
-        collection_name = TYPE_COLLECTION_MAP.get(field_type, MILVUS_COLLECTION)
+        if field_type not in TYPE_COLLECTION_MAP:
+            raise ValueError(
+                f"不支持的字段类型: {field_type}，"
+                f"支持的类型: {list(TYPE_COLLECTION_MAP.keys())}"
+            )
+        collection_name = TYPE_COLLECTION_MAP[field_type]
 
     if client is None:
         client = get_client()

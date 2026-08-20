@@ -82,6 +82,7 @@ def run_standard_mapping(args):
         "output_file": output_file,
         "domain_results": [],
         "selection_results": [],
+        "include_candidates": bool(getattr(args, "include_candidates", False)),
     }
 
     app.invoke(initial_state, config={"recursion_limit": 100})
@@ -110,6 +111,11 @@ def main():
     sm_parser = subparsers.add_parser("standard-mapping", help="落标处理")
     sm_parser.add_argument("--input", "-i", required=True, help="输入 Excel 文件路径")
     sm_parser.add_argument("--output", "-o", default=None, help="输出 Excel 文件路径（默认在输入文件名后加 _output）")
+    sm_parser.add_argument(
+        "--include-candidates",
+        action="store_true",
+        help="输出中附带候选标准及得分明细列（测试/调试用，默认关闭）",
+    )
 
     # standard-maintenance
     stm_parser = subparsers.add_parser("standard-maintenance", help="标准维护")

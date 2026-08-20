@@ -5,10 +5,11 @@
 
 import json
 
+from config import BATCH_SIZE
+
 from langchain_openai import ChatOpenAI
 
 from common.llm_client import get_llm, call_with_retry, chunked
-from config import BATCH_SIZE
 from standard_mapping.state import StandardSelectionResult
 from standard_mapping.prompts import (
     STANDARD_SELECTION_SYSTEM,

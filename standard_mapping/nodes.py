@@ -3,7 +3,7 @@
 图结构：
   START
     ↓
-  load_and_fetch   -- 读取 Excel，筛选非枚举类字段，调用接口获取备选标准
+  load_and_fetch   -- 读取 Excel，筛选非枚举类字段，向量检索 + 字典回填获取备选标准
     ↓
   check_domain     -- 域类型精筛（标志类恒定通过，非标志类正则检测冲突，冲突则淘汰）
     ↓
@@ -19,14 +19,24 @@ from standard_mapping.excel_utils import read_excel, write_excel
 from standard_mapping.llm import get_llm, select_standard
 from standard_mapping.constants import NON_ENUM_TYPES
 from common.domain_rules import check_data_example
+from common.vector_store import search as vector_search
+from common.dictionary_store import (
+    get_by_ids as get_standards_by_ids,
+    get_by_name as get_standards_by_name,
+)
 
 
 # ============================================================
-# 备选标准接口（TODO: 替换为实际接口调用）
+# 备选标准获取（向量检索 + 字典回填）
 # ============================================================
 
 def fetch_candidates(field_name: str, business_meaning: str, field_type: str) -> list[CandidateStandard]:
-    """调用外部接口获取备选标准列表。
+    """向量检索 + 字典回填，获取备选标准列表。
+
+    流程:
+      1. 调用向量检索（稠密 top10 + 稀疏 top10 -> 合并去重）
+      2. 根据返回的标准编号，从存量字典补全完整信息
+      3. 精确同名保底：字典中存在与字段名完全一致的标准时并入候选（置顶）
 
     Args:
         field_name: 字段中文名
@@ -37,8 +47,67 @@ def fetch_candidates(field_name: str, business_meaning: str, field_type: str) ->
         备选标准列表，每项包含 std_id/std_name/std_type/business_definition/
         domain_id/domain_name/domain_type/data_example
     """
-    # TODO: 替换为实际接口调用
-    raise NotImplementedError("备选标准接口尚未对接，请实现 fetch_candidates()")
+    # 1. 向量检索
+    search_results = vector_search(
+        query_name=field_name,
+        query_meaning=business_meaning,
+        top_k=10,
+        field_type=field_type,
+    )
+
+    if not search_results:
+        return _ensure_exact_name_match([], field_name, field_type)
+
+    # 2. 从存量字典补全完整信息（附检索得分，供测试输出明细）
+    std_ids = [r["standard_id"] for r in search_results]
+    dict_records = get_standards_by_ids(std_ids)
+    score_map = {r["standard_id"]: r for r in search_results}
+
+    candidates = []
+    for r in dict_records:
+        score = score_map.get(r["std_id"], {})
+        candidates.append(CandidateStandard(
+            std_id=r["std_id"],
+            std_name=r["std_name"],
+            std_type=r["std_type"],
+            business_definition=r["business_definition"],
+            domain_id=r["domain_id"],
+            domain_name=r["domain_name"],
+            domain_type=r["domain_type"],
+            data_example=r["data_example"],
+            dense_score=score.get("dense_score", 0.0),
+            sparse_score=score.get("sparse_score", 0.0),
+            source=score.get("source", ""),
+        ))
+    return _ensure_exact_name_match(candidates, field_name, field_type)
+
+
+def _ensure_exact_name_match(candidates, field_name, field_type) -> list[CandidateStandard]:
+    """精确同名保底：同类型字典中存在与字段名完全一致的标准时并入候选。
+
+    仅当精确同名标准未出现在检索候选里时生效，避免与检索结果重复。
+    """
+    name = field_name.strip()
+    if any(c["std_name"].strip() == name for c in candidates):
+        return candidates
+
+    exact = get_standards_by_name(name, field_type)
+    if not exact:
+        return candidates
+
+    return [CandidateStandard(
+        std_id=r["std_id"],
+        std_name=r["std_name"],
+        std_type=r["std_type"],
+        business_definition=r["business_definition"],
+        domain_id=r["domain_id"],
+        domain_name=r["domain_name"],
+        domain_type=r["domain_type"],
+        data_example=r["data_example"],
+        dense_score=0.0,
+        sparse_score=0.0,
+        source="exact",
+    ) for r in exact] + candidates
 
 
 # ============================================================
@@ -65,7 +134,7 @@ def _detect_domain_conflict(domain_type: str, data_example: str) -> bool:
 # ============================================================
 
 def load_and_fetch_node(state: MappingGraphState) -> dict:
-    """读取输入 Excel，筛选非代码枚举类字段，调用接口获取备选标准。"""
+    """读取输入 Excel，筛选非代码枚举类字段，向量检索 + 字典回填获取备选标准。"""
     print("\n=== 步骤 1/4: 加载 Excel 并获取备选标准 ===")
     all_rows = read_excel(state["input_file"])
 
@@ -75,12 +144,20 @@ def load_and_fetch_node(state: MappingGraphState) -> dict:
     if enum_count > 0:
         print(f"  筛选: 排除 {enum_count} 行代码枚举类字段，保留 {len(rows)} 行非枚举类字段")
 
-    # 调用接口获取备选标准
+    # 向量检索 + 字典回填获取备选标准
     for row in rows:
-        row["candidates"] = fetch_candidates(row["field_name"], row["business_meaning"], row["field_type"])
+        try:
+            row["candidates"] = fetch_candidates(
+                row["field_name"], row["business_meaning"], row["field_type"]
+            )
+            row["candidate_fetch_error"] = ""
+        except Exception as e:
+            row["candidates"] = []
+            row["candidate_fetch_error"] = f"候选检索失败: {e}"
+            print(f"  行 {row['index']} 候选检索失败: {e}")
 
     print(f"  备选标准获取完成: {len(rows)} 行")
-    return {"rows": rows, "domain_results": [], "selection_results": []}
+    return {"rows": rows, "domain_results": [], "selection_results": [], "include_candidates": state.get("include_candidates", False)}
 
 
 # ============================================================
@@ -155,7 +232,14 @@ def select_standard_node(state: MappingGraphState) -> dict:
     direct_new_count = 0
 
     for row in rows:
-        if not row["candidates"]:
+        if row.get("candidate_fetch_error"):
+            # 候选检索失败，标记需人工复核
+            row["mapping_result"] = "候选检索失败，需人工复核"
+            row["selected_std_id"] = ""
+            row["selected_std_name"] = ""
+            row["llm_reason"] = row["candidate_fetch_error"]
+            direct_new_count += 1
+        elif not row["candidates"]:
             # 无备选标准，直接新增
             row["mapping_result"] = "新增标准"
             row["selected_std_id"] = ""
@@ -217,5 +301,10 @@ def select_standard_node(state: MappingGraphState) -> dict:
 def write_result_node(state: MappingGraphState) -> dict:
     """将落标结果写入输出 Excel。"""
     print("\n=== 步骤 4/4: 写入结果 Excel ===")
-    write_excel(state["output_file"], state["rows"], state["input_file"])
+    write_excel(
+        state["output_file"],
+        state["rows"],
+        state["input_file"],
+        include_candidates=state.get("include_candidates", False),
+    )
     return {}

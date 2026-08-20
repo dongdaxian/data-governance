@@ -14,6 +14,14 @@
 
 import os
 
+# 禁止 transformers 导入 TensorFlow（h5py 与 NumPy 2.x 二进制不兼容）
+# 必须在所有可能触发 transformers 导入的模块之前设置
+# huggingface_hub 会在 import 时缓存端点配置，HF 镜像相关环境变量同样必须提前设置
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+
 
 
 from dotenv import load_dotenv
@@ -121,3 +129,6 @@ EMBED_DEVICE = os.getenv('EMBED_DEVICE', 'cpu')
 
 VECTOR_BACKUP_DIR = os.path.join(os.path.dirname(__file__), 'data', 'vector_backup')
 
+
+# 全量字典文件路径（用于候选标准信息回填）
+DICTIONARY_PATH = os.path.join(os.path.dirname(__file__), 'data', 'dictionary_mock', '全量字典_最终.xlsx')

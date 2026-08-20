@@ -5,10 +5,11 @@
 
 import json
 
+from config import BATCH_SIZE
+
 from langchain_openai import ChatOpenAI
 
 from common.llm_client import get_llm, call_with_retry, chunked
-from config import BATCH_SIZE
 from quality_check.state import (
     BusinessMeaningResult,
     EnumNormalizationResult,

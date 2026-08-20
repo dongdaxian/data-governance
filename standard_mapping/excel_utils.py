@@ -15,6 +15,7 @@ from standard_mapping.constants import (
     COL_SELECTED_STD_ID,
     COL_SELECTED_STD_NAME,
     COL_LLM_REASON,
+    COL_CANDIDATES,
 )
 from standard_mapping.state import FieldToMap
 
@@ -63,6 +64,7 @@ def read_excel(file_path: str) -> list[FieldToMap]:
             data_example=str(row.get(col_map["data_example"], "") or "").strip() if "data_example" in col_map else "",
             # 初始化结果字段
             candidates=[],
+            candidate_fetch_error="",
             domain_check_details="",
             mapping_result="",
             selected_std_id="",
@@ -75,27 +77,57 @@ def read_excel(file_path: str) -> list[FieldToMap]:
     return rows
 
 
-def write_excel(file_path: str, rows: list[FieldToMap], input_file: str):
+def _format_candidates(candidates) -> str:
+    """将候选标准格式化为明细文本（仅测试输出用）。"""
+    if not candidates:
+        return ""
+    parts = []
+    for c in candidates:
+        parts.append(
+            f"{c['std_id']} {c['std_name']}({c['std_type']}/{c['domain_type']},"
+            f"dense={c.get('dense_score', 0.0)},sparse={c.get('sparse_score', 0.0)})"
+        )
+    return "; ".join(parts)
+
+
+def write_excel(
+    file_path: str,
+    rows: list[FieldToMap],
+    input_file: str,
+    include_candidates: bool = False,
+):
     """将落标结果写入 Excel。
 
-    保留原始数据列，追加四列：落标结果、选中标准编号、选中标准名称、LLM判断过程。
+    保留原始数据列，追加落标结果、选中标准编号、选中标准名称、LLM判断过程；
+    include_candidates=True 时再追加一列候选标准及得分（测试/调试用）。
     输出格式：第1行合并表头（"基本信息" + "落标结果"），第2行列名，第3行+数据。
     """
     # 读取原始 Excel（跳过合并表头行，从第2行开始）
     df = pd.read_excel(input_file, header=1)
     orig_col_count = len(df.columns)
 
-    # 按 rows 的 index 顺序追加结果列
-    sorted_rows = sorted(rows, key=lambda r: r["index"])
+    # 按 index 对齐结果列（被过滤的行如代码枚举类填空值）
+    row_map = {r["index"]: r for r in rows}
+    n = len(df)
 
-    df[COL_MAPPING_RESULT] = [r["mapping_result"] for r in sorted_rows]
-    df[COL_SELECTED_STD_ID] = [r["selected_std_id"] for r in sorted_rows]
-    df[COL_SELECTED_STD_NAME] = [r["selected_std_name"] for r in sorted_rows]
-    df[COL_LLM_REASON] = [r["llm_reason"] for r in sorted_rows]
+    def _col(key):
+        return [row_map[i][key] if i in row_map else '' for i in range(n)]
+
+    df[COL_MAPPING_RESULT] = _col("mapping_result")
+    df[COL_SELECTED_STD_ID] = _col("selected_std_id")
+    df[COL_SELECTED_STD_NAME] = _col("selected_std_name")
+    df[COL_LLM_REASON] = _col("llm_reason")
+    if include_candidates:
+        df[COL_CANDIDATES] = [
+            _format_candidates(row_map[i]["candidates"]) if i in row_map else ""
+            for i in range(n)
+        ]
+
+    sorted_rows = sorted(rows, key=lambda r: r["index"])
 
     df.to_excel(file_path, index=False)
 
-    # 在第1行插入合并表头："基本信息"（原始列）+ "落标结果"（新增4列）
+    # 在第1行插入合并表头："基本信息"（原始列）+ "落标结果"（新增结果列）
     wb = load_workbook(file_path)
     ws = wb.active
     ws.insert_rows(1)

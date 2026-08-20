@@ -1,6 +1,6 @@
 """落标处理状态定义 & LLM 结构化输出的 Pydantic Schema。"""
 
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from pydantic import BaseModel, Field
 
@@ -19,6 +19,9 @@ class CandidateStandard(TypedDict):
     domain_name: str      # 域名称
     domain_type: str      # 域类型（如 an..(20)）
     data_example: str     # 数据示例
+    dense_score: NotRequired[float]   # 稠密检索得分（候选明细输出用）
+    sparse_score: NotRequired[float]  # 稀疏检索得分
+    source: NotRequired[str]          # 检索来源: dense/sparse/both
 
 
 class FieldToMap(TypedDict):
@@ -32,6 +35,7 @@ class FieldToMap(TypedDict):
 
     # load_and_fetch 节点产出
     candidates: list[CandidateStandard]  # 备选标准列表
+    candidate_fetch_error: str  # 候选检索错误信息（检索失败时填充）
 
     # check_domain 节点产出
     domain_check_details: str  # 域检查详情
@@ -50,6 +54,7 @@ class MappingGraphState(TypedDict):
     output_file: str
     domain_results: list[dict]     # check_domain 节点产出
     selection_results: list[dict]  # select_standard 节点产出
+    include_candidates: bool       # 是否输出候选标准及得分明细列（测试/调试用）
 
 
 # ============================================================
