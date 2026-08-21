@@ -6,7 +6,7 @@
   python main.py standard-maintenance --input 输入.xlsx --output 输出.xlsx
 
 示例：
-  python main.py quality-check --input data/sample_input.xlsx --output data/sample_output.xlsx
+  python main.py quality-check --input data/qc_input.xlsx --output data/qc_output.xlsx
 """
 
 import argparse
@@ -82,7 +82,7 @@ def run_standard_mapping(args):
         "output_file": output_file,
         "domain_results": [],
         "selection_results": [],
-        "include_candidates": bool(getattr(args, "include_candidates", False)),
+        "include_candidates": True,
     }
 
     app.invoke(initial_state, config={"recursion_limit": 100})

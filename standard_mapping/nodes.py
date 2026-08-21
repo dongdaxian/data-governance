@@ -157,7 +157,7 @@ def load_and_fetch_node(state: MappingGraphState) -> dict:
             print(f"  行 {row['index']} 候选检索失败: {e}")
 
     print(f"  备选标准获取完成: {len(rows)} 行")
-    return {"rows": rows, "domain_results": [], "selection_results": [], "include_candidates": state.get("include_candidates", False)}
+    return {"rows": rows, "domain_results": [], "selection_results": [], "include_candidates": state.get("include_candidates", True)}
 
 
 # ============================================================
@@ -305,6 +305,6 @@ def write_result_node(state: MappingGraphState) -> dict:
         state["output_file"],
         state["rows"],
         state["input_file"],
-        include_candidates=state.get("include_candidates", False),
+        include_candidates=state.get("include_candidates", True),
     )
     return {}

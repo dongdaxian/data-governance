@@ -2,7 +2,7 @@
 """生成示例输入 Excel，包含各种测试场景。
 
 运行：python -m quality_check.create_sample
-生成：../data/sample_input.xlsx
+生成：../data/qc_input.xlsx
 
 Excel 格式：
   第1行：合并表头"基本信息"（跨26列）+"数管反馈"（跨3列）
@@ -223,7 +223,7 @@ def main():
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(current_dir)
-    output = os.path.join(project_root, "data", "sample_input.xlsx")
+    output = os.path.join(project_root, "data", "qc_input.xlsx")
     df.to_excel(output, index=False)
 
     # 第1行插入合并表头："基本信息"（跨26列）+ "数管反馈"（跨3列）
