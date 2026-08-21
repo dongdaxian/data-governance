@@ -7,12 +7,11 @@ data/sample_output.xlsx
 # 向量备份（自动生成）
 data/vector_backup/
 
-# 本地文档（不push）
+# 本地文档
 docs/
-docs(不用push我）/
 
-# 本地旧样例（不push）
-data/不用push我/
+# 本地旧样例
+data/local_sample/
 
-# 字典mock原始文件（不push）
+# 字典mock原始文件
 data/dictionary_mock/
