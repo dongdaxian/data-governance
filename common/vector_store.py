@@ -14,8 +14,6 @@
 
   4. 混合检索（稠密 top_k + 稀疏 top_k -> 合并去重）
 
-  5. 稠密向量 Parquet 本地备份
-
 
 
 环境说明：
@@ -68,7 +66,6 @@ from config import (
     EMBED_DIMENSION,
     EMBED_QUERY_INSTRUCTION,
     EMBED_DEVICE,
-    VECTOR_BACKUP_DIR,
 )
 
 
@@ -600,39 +597,3 @@ def search(query_name, query_meaning, top_k=10, field_type=None, collection_name
             }
 
     return list(results.values())
-
-
-# ============================================================
-
-# Parquet 备份
-
-# ============================================================
-
-
-def backup_to_parquet(records, filepath=None):
-    """将稠密向量和原文备份到 Parquet 文件。"""
-
-    import pandas as pd
-
-    if filepath is None:
-        os.makedirs(VECTOR_BACKUP_DIR, exist_ok=True)
-
-        filepath = os.path.join(VECTOR_BACKUP_DIR, "dense_vectors.parquet")
-
-    backup_cols = [
-        "standard_id",
-        "name_text",
-        "meaning_text",
-        "name_dense",
-        "meaning_dense",
-    ]
-
-    df = pd.DataFrame(records)
-
-    df = df[[c for c in backup_cols if c in df.columns]]
-
-    df.to_parquet(filepath, index=False)
-
-    _logger.info("稠密向量已备份: %s (%d 条)", filepath, len(df))
-
-    return filepath

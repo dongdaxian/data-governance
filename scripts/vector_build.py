@@ -5,8 +5,7 @@
   1. 读取全量字典_最终.xlsx，筛选非代码枚举类，按字段所属类型分组
   2. bge-large-zh-v1.5 向量化（字段中文名 + 业务定义）
   3. 按类型写入对应的 Milvus 集合（dict_encode/text/number/datetime/flag）
-  4. 稠密向量备份到 Parquet（按类型分文件，Milvus 试用期 1 个月）
-  5. 检索验证
+  4. 检索验证
 
 用法：
   # 测试模式（仅处理 10 条/类型）
@@ -35,7 +34,6 @@ from common.vector_store import (
     create_collection,
     embed_texts,
     insert_standards,
-    backup_to_parquet,
     search,
     ensure_loaded,
     drop_collection,
@@ -53,11 +51,6 @@ DICT_PATH = os.path.join(
 )
 
 LEGACY_COLLECTION = "dict_non_enum"
-
-VECTOR_BACKUP_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "data", "vector_backup",
-)
 
 
 def load_records(dict_path, limit=None):
@@ -85,11 +78,16 @@ def load_records(dict_path, limit=None):
     for ftype, group in df.groupby("标准所属类型"):
         records = []
         for _, row in group.iterrows():
+            meaning = row["业务定义"]
+            # Milvus VARCHAR max_length 按 UTF-8 字节计算，需按字节截断
+            meaning_bytes = meaning.encode("utf-8")
+            if len(meaning_bytes) > 4000:
+                meaning = meaning_bytes[:4000].decode("utf-8", errors="ignore")
             records.append(
                 {
                     "standard_id": row["标准编号"],
                     "name_text": row["标准中文名称"],
-                    "meaning_text": row["业务定义"][:4000],
+                    "meaning_text": meaning,
                 }
             )
         if limit:
@@ -146,9 +144,6 @@ def main():
         "--limit", "-n", type=int, default=None, help="仅处理前 N 条/类型（测试用）"
     )
     parser.add_argument(
-        "--no-backup", action="store_true", help="不备份 Parquet"
-    )
-    parser.add_argument(
         "--dry-run", action="store_true", help="仅向量化，不写入 Milvus"
     )
     parser.add_argument(
@@ -192,16 +187,7 @@ def main():
         print(f"  写入 Milvus...")
         insert_standards(client, records, collection_name=collection_name)
 
-        # 4. Parquet 备份（按类型分文件）
-        if not args.no_backup:
-            os.makedirs(VECTOR_BACKUP_DIR, exist_ok=True)
-            backup_path = backup_to_parquet(
-                records,
-                filepath=os.path.join(VECTOR_BACKUP_DIR, f"{collection_name}.parquet"),
-            )
-            print(f"  Parquet 备份: {backup_path}")
-
-        # 5. 检索验证
+        # 4. 检索验证
         print(f"  --- 检索验证 ---")
         ensure_loaded(client, collection_name=collection_name)
         test_name = records[0]["name_text"]

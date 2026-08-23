@@ -48,13 +48,13 @@ API_KEY = os.getenv("API_KEY", "")
 
 # OpenAI 兼容接口地址
 
-BASE_URL = os.getenv("BASE_URL", "https://api.deepseek.com")
+BASE_URL = os.getenv("BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3")
 
 
 
-# 模型名称（glm-5.2）
+# 模型名称
 
-LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
+LLM_MODEL = os.getenv("LLM_MODEL", "glm-5.3")
 
 
 
@@ -122,12 +122,6 @@ EMBED_DIMENSION = 1024
 EMBED_QUERY_INSTRUCTION = '为这个句子生成表示以用于检索相关文章：'
 # 向量化设备：cpu 或 cuda（有 GPU 时设为 cuda 可大幅加速）
 EMBED_DEVICE = os.getenv('EMBED_DEVICE', 'cpu')
-
-
-
-# 本地向量备份目录（Parquet 格式，Milvus 试用期 1 个月）
-
-VECTOR_BACKUP_DIR = os.path.join(os.path.dirname(__file__), 'data', 'vector_backup')
 
 
 # 全量字典文件路径（用于候选标准信息回填）

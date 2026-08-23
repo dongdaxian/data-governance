@@ -48,7 +48,6 @@ python scripts/vector_build.py [选项]
   --dry-run          仅向量化，不写入 Milvus
   --input PATH       自定义输入 Excel 路径
   --cleanup-legacy   删除旧的 dict_non_enum 集合
-  --no-backup        不生成 Parquet 备份
 ```
 
 ## 在代码中调用检索
@@ -77,7 +76,3 @@ for r in results:
 字段：standard_id（主键）、name_text、name_dense(1024)、name_sparse(BM25)、meaning_text、meaning_dense(1024)、meaning_sparse(BM25)。
 
 检索逻辑：稠密 top10（HNSW+COSINE，名称+含义各 0.5）+ 稀疏 top10（BM25，名称+含义各 0.5）-> 合并去重，最多 20 条。
-
-## 本地备份
-
-稠密向量按类型备份到 `data/vector_backup/<集合名>.parquet`，Milvus 试用期到期后可用此文件恢复。

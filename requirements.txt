@@ -5,10 +5,14 @@ openpyxl>=3.1.0
 pandas>=2.0.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
+numpy>=1.24.0
 
 # 向量检索模块依赖
 pymilvus>=2.5.0
 sentence-transformers>=3.0.0
+# torch 需单独安装 CUDA 版本：
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+# 若无 GPU，直接 pip install torch 即可（CPU 版）
 torch>=2.0.0
 pyarrow>=15.0.0
 transformers>=4.40.0

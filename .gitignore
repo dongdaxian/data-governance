@@ -4,9 +4,6 @@ __pycache__/
 .trae/
 data/sample_output.xlsx
 
-# 向量备份（自动生成）
-data/vector_backup/
-
 # 本地文档
 docs/
 
@@ -15,3 +12,6 @@ data/local_sample/
 
 # 字典mock原始文件
 data/dictionary_mock/
+
+# 测试实际输出（自动生成，标准答案见 test/<模块>/output.xlsx）
+test/*/actual_output.xlsx

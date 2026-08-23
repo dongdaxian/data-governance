@@ -12,3 +12,4 @@ MILVUS_TOKEN=xxxxxx
 
 ## TODO
 1. quality_check模块，判断业务含义时，现在还没有加上中文表名
+2. LLM_MAX_TOKENS可能有点小
