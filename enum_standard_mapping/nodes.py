@@ -202,7 +202,17 @@ def select_result_node(state: EnumMappingGraphState) -> dict:
     from common.llm_client import get_llm
     from enum_standard_mapping.llm import select_enum_result
     llm = get_llm()
-    results = select_enum_result(llm, rows_to_select)
+    try:
+        results = select_enum_result(llm, rows_to_select)
+    except Exception as e:
+        # LLM 失败兜底：相关行标记失败，保留候选明细供人工处理
+        pending = {r["row_index"] for r in rows_to_select}
+        for row in rows:
+            if row["index"] in pending:
+                row["mapping_result"] = "LLM判断失败"
+                row["llm_reason"] = f"LLM 调用失败（重试后仍失败）: {e}"
+        print(f"  LLM 判定失败: {e}")
+        return {"rows": rows, "selection_results": []}
 
     # 应用 LLM 结果
     selection_results = []
