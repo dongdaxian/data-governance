@@ -126,3 +126,25 @@ EMBED_DEVICE = os.getenv('EMBED_DEVICE', 'cpu')
 
 # 全量字典文件路径（用于候选标准信息回填）
 DICTIONARY_PATH = os.path.join(os.path.dirname(__file__), 'data', 'dictionary_mock', '全量字典_最终.xlsx')
+
+
+# ============================================================
+# 枚举落标（enum_standard_mapping）配置
+# ============================================================
+
+# 枚举值码值向量集合名
+ENUM_VALUE_COLLECTION = os.getenv('ENUM_VALUE_COLLECTION', 'dict_enum_values')
+
+# 码值相似度阈值：单条码值向量检索相似度 >= 该值计为"命中"
+ENUM_VALUE_MATCH_THRESHOLD = float(os.getenv('ENUM_VALUE_MATCH_THRESHOLD', '0.80'))
+
+# 候选枚举值项数量：得分排序取前 N（含并列）
+ENUM_CANDIDATE_TOP_N = int(os.getenv('ENUM_CANDIDATE_TOP_N', '20'))
+
+# 每条码值检索返回条数（top_k，需覆盖同文本在多个枚举值项中的分布）
+ENUM_VALUE_SEARCH_TOP_K = int(os.getenv('ENUM_VALUE_SEARCH_TOP_K', '300'))
+
+# "大量重复"门槛：命中数/n >= 该值才触发补充类结果（4/5），如 0.67
+ENUM_HEAVY_OVERLAP_RATIO = float(os.getenv('ENUM_HEAVY_OVERLAP_RATIO', '0.667'))
+
+# 淘汰线：未命中数 >= ceil(n/2) 的枚举值项出局（代码内计算，无需配置）

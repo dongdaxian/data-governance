@@ -45,6 +45,13 @@ MODULES = {
         # 只比对判定结论列，其余列（LLM 自由文本、浮点得分等）不参与比对
         "compare_columns": ["落标结果"],
     },
+    "enum_standard_mapping": {
+        "command": "enum-standard-mapping",
+        # 标准答案 output.xlsx 含"候选及得分"列，需带该参数生成
+        "extra_args": ["--include-candidates"],
+        # 只比对判定结论列，其余列（LLM 自由文本、枚举值明细等）不参与比对
+        "compare_columns": ["落标结果"],
+    },
 }
 
 MAX_DIFF_SHOW = 20  # 最多展示的差异条数
