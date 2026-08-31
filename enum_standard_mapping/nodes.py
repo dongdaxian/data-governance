@@ -133,7 +133,7 @@ def _score_row(row: FieldToMap) -> None:
     candidates = []
     for item in top:
         item_id = item["item_id"]
-        item_type = "domain" if item_id.startswith("CDE") else "standard"
+        item_type = item.get("item_type") or ("domain" if item_id.startswith("CDE") else "standard")
         item_pairs, standards, item_name = _get_item_pairs_and_standards(item_id, item_type)
         if not item_pairs:
             continue

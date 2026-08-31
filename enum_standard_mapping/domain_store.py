@@ -89,6 +89,7 @@ def _batch_search_values(value_texts: list[str]) -> dict[str, list[dict]]:
         anns_field="value_dense",
         limit=ENUM_VALUE_SEARCH_TOP_K,
         output_fields=_OUTPUT_FIELDS,
+        filter='item_type != "name"',
     )
 
     hits_by_text = {}
@@ -121,15 +122,18 @@ def score_enum_items(pairs: list[tuple[str, str]]) -> dict:
     hits_by_value = _batch_search_values(value_texts)
 
     # 按 item 聚合得分
-    item_scores = defaultdict(lambda: {"score": 0, "matched": []})
+    item_scores = defaultdict(lambda: {"score": 0, "matched": [], "item_type": ""})
     for code, value in pairs:
         hits = hits_by_value.get(value)
         if not hits:
             continue
         matched_items = set()
         for h in hits:
-            item_scores[h["item_id"]]["score"] += 1
-            matched_items.add(h["item_id"])
+            iid = h["item_id"]
+            item_scores[iid]["score"] += 1
+            if not item_scores[iid]["item_type"]:
+                item_scores[iid]["item_type"] = h.get("item_type", "")
+            matched_items.add(iid)
         for item_id in matched_items:
             item_scores[item_id]["matched"].append((code, value))
 
@@ -157,6 +161,7 @@ def eliminate_and_rank(item_scores: dict, n: int) -> list[dict]:
                 "item_id": item_id,
                 "score": info["score"],
                 "matched": info["matched"],
+                "item_type": info.get("item_type", ""),
             })
     survivors.sort(key=lambda x: (-x["score"], x["item_id"]))
     return survivors
