@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """LangGraph 状态定义 & LLM 结构化输出的 Pydantic Schema。"""
 
 from typing import TypedDict
@@ -17,7 +17,7 @@ class RowData(TypedDict):
     enum_values: str          # 枚举值（原始）
 
     # check_rules 节点产出
-    rule_issues: list[str]    # 规则检查问题列表（检查 0-5）
+    rule_issues: list[str]    # 规则检查问题列表
     rule_passed: bool         # 规则检查是否全部通过
 
     # check_semantic 节点产出
@@ -27,6 +27,9 @@ class RowData(TypedDict):
     # normalize_enum 节点产出
     normalized_enum: str      # 规范化后的枚举值
     enum_needs_normalization: bool  # 是否进行了规范化
+
+    # check_flag 节点产出
+    flag_issues: list[str]    # 标志类误用问题列表（码值有且仅有"是"和"否"）
 
     # combine_results 节点产出
     check_result: str         # "通过" / "不通过"

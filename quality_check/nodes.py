@@ -6,12 +6,15 @@
     |
   load_excel    -- 读取 Excel，初始化 RowData
     |
-  check_rules   -- 规则检查：非空(5) + 类型合法(1) + 枚举一致(2) + 域类型匹配(3) + 数据示例(4) + 重复(0)
+  check_rules   -- 规则检查：非空 + 类型合法 + 枚举一致 + 域类型匹配 + 数据示例 + 重复
     |
   +-------------------+
   | check_semantic    |  (并行) LLM 检查业务含义
   | normalize_enum    |  (并行) LLM 规范化枚举值
   +-------------------+
+          |
+  check_flag     -- 标志类误用检查：仅此前检查无问题的代码枚举类记录，
+                    规范化后码值有且仅有"是"和"否"判为应申报标志类
           |
   combine_results -- 汇总所有检查结果，判定通过/不通过
           |
@@ -36,23 +39,23 @@ from common.domain_rules import parse_domain_type, check_data_example
 
 def load_excel_node(state: GraphState) -> dict:
     """读取输入 Excel，初始化 RowData 列表。"""
-    print("\n=== 步骤 1/5: 加载 Excel ===")
+    print("\n=== 步骤 1/6: 加载 Excel ===")
     rows = read_excel(state["input_file"])
     return {"rows": rows, "semantic_results": [], "enum_results": []}
 
 
 # ============================================================
-# 节点 2: 规则检查（检查 0-5）
+# 节点 2: 规则检查
 # ============================================================
 
 def check_rules_node(state: GraphState) -> dict:
-    """规则检查：非空(5) + 类型合法(1) + 枚举一致(2) + 域类型匹配(3) + 数据示例(4) + 重复(0)。
+    """规则检查：非空 + 类型合法 + 枚举一致 + 域类型匹配 + 数据示例 + 重复。
 
     检查间逻辑依赖：
-      5(非空) -> 1(类型合法) -> 2(枚举一致) / 3(域类型匹配) -> 4(数据示例)
-      0(重复) 在所有行检查完后批量执行
+      非空 -> 类型合法 -> 枚举一致 / 域类型匹配 -> 数据示例
+      重复 在所有行检查完后批量执行
     """
-    print("\n=== 步骤 2/5: 规则检查（非空+类型+枚举+域类型+数据示例+重复）===")
+    print("\n=== 步骤 2/6: 规则检查（非空+类型+枚举+域类型+数据示例+重复）===")
     rows = state["rows"]
 
     # --- 第一阶段：逐行规则检查 ---
@@ -60,7 +63,7 @@ def check_rules_node(state: GraphState) -> dict:
     for row in rows:
         issues = []
 
-        # 检查 5: 必填字段非空
+        # 必填字段非空
         required = {
             "中文表名": row["table_name"],
             "中文字段名": row["field_name"],
@@ -74,7 +77,7 @@ def check_rules_node(state: GraphState) -> dict:
         if empty_fields:
             issues.append(f"必填字段为空: {', '.join(empty_fields)}")
 
-        # 检查 1: 字段所属类型合法性（类型为空时跳过）
+        # 字段所属类型合法性（类型为空时跳过）
         type_valid = False
         if row["field_type"] and row["field_type"].strip():
             if row["field_type"] not in VALID_FIELD_TYPES:
@@ -85,7 +88,7 @@ def check_rules_node(state: GraphState) -> dict:
             else:
                 type_valid = True
 
-        # 检查 2: 是否枚举一致性 + 枚举值联动（依赖类型合法）
+        # 是否枚举一致性 + 枚举值联动（依赖类型合法）
         if type_valid and row["is_enum"] and row["is_enum"].strip():
             is_code_enum = row["field_type"] == "代码枚举类"
             is_enum_val = row["is_enum"].strip()
@@ -105,14 +108,19 @@ def check_rules_node(state: GraphState) -> dict:
             elif is_enum_val == "否" and has_enum_values:
                 issues.append("'是否枚举'为'否'但枚举值不为空")
 
-        # 检查 3: 域类型与字段所属类型匹配
+        # 域类型与字段所属类型匹配（类型不合法或代码枚举类直接跳过）
         domain_key = None
         domain_match = None
-        if row["domain_type"] and row["domain_type"].strip():
+        if (
+            type_valid
+            and row["field_type"] != "代码枚举类"
+            and row["domain_type"]
+            and row["domain_type"].strip()
+        ):
             domain_key, domain_match = parse_domain_type(row["domain_type"])
             if domain_key is None:
                 issues.append(f"域类型'{row['domain_type']}'格式不合法")
-            elif type_valid:
+            else:
                 whitelist = DOMAIN_WHITELIST.get(row["field_type"], set())
                 if domain_key not in whitelist:
                     issues.append(
@@ -125,8 +133,14 @@ def check_rules_node(state: GraphState) -> dict:
                             f"标志类字段的域类型必须为n!(1)，实际为'{row['domain_type']}'"
                         )
 
-        # 检查 4: 域类型与数据示例相符（依赖域类型格式可解析）
-        if domain_key is not None and row["data_example"] and row["data_example"].strip():
+        # 域类型与数据示例相符（类型不合法或代码枚举类直接跳过）
+        if (
+            type_valid
+            and row["field_type"] != "代码枚举类"
+            and domain_key is not None
+            and row["data_example"]
+            and row["data_example"].strip()
+        ):
             ok, reason = check_data_example(
                 row["domain_type"], row["data_example"]
             )
@@ -139,7 +153,7 @@ def check_rules_node(state: GraphState) -> dict:
         row["rule_issues"] = issues
         row["rule_passed"] = len(issues) == 0
 
-    # --- 第二阶段：批量检查 0: 重复字段名 ---
+    # --- 第二阶段：批量检查重复字段名 ---
     seen = {}  # (table_name, field_name) -> list index in rows
     for list_idx, row in enumerate(rows):
         if not row["table_name"] or not row["field_name"]:
@@ -173,7 +187,7 @@ def check_semantic_node(state: GraphState) -> dict:
 
     仅跳过业务定义为空的行，与规则检查结果互不影响。
     """
-    print("\n=== 步骤 3a/5: LLM 业务含义检查 ===")
+    print("\n=== 步骤 3a/6: LLM 业务含义检查 ===")
     rows = state["rows"]
 
     rows_to_check = [
@@ -211,7 +225,7 @@ def normalize_enum_node(state: GraphState) -> dict:
 
     仅跳过枚举值为空的行，与规则检查结果互不影响。
     """
-    print("\n=== 步骤 3b/5: LLM 枚举值规范化 ===")
+    print("\n=== 步骤 3b/6: LLM 枚举值规范化 ===")
     rows = state["rows"]
 
     rows_with_enum = [
@@ -240,12 +254,71 @@ def normalize_enum_node(state: GraphState) -> dict:
 
 
 # ============================================================
-# 节点 4: 汇总检查结果
+# 节点 4: 标志类误用检查（3a/3b 都完成后执行）
+# ============================================================
+
+def check_flag_node(state: GraphState) -> dict:
+    """检查代码枚举类字段的枚举值是否实为标志类。
+
+    仅处理此前检查（规则+业务含义）无问题的记录，使用规范化后的枚举值：
+    去掉码值前的代码后，若码值有且仅有"是"和"否"两项，
+    则该字段应为标志类而非代码枚举类，报错。
+    """
+    print("\n=== 步骤 4/6: 标志类误用检查 ===")
+    rows = state["rows"]
+    semantic_map = {r["row_index"]: r for r in state.get("semantic_results", [])}
+    enum_map = {r["row_index"]: r for r in state.get("enum_results", [])}
+
+    flagged = 0
+    for row in rows:
+        row["flag_issues"] = []
+
+        # 仅检查此前无问题的记录
+        if not row["rule_passed"]:
+            continue
+        sr = semantic_map.get(row["index"])
+        if sr and not sr["is_meaningful"]:
+            continue
+
+        # 仅检查代码枚举类
+        if row["field_type"] != "代码枚举类":
+            continue
+
+        # 优先使用规范化后的枚举值，规范化结果缺失时回退原始枚举值
+        er = enum_map.get(row["index"])
+        normalized = er["normalized"] if er else row["enum_values"]
+        if not normalized:
+            continue
+
+        # 去掉代码，只看码值
+        code_values = set()
+        for item in normalized.split(";"):
+            item = item.strip()
+            if not item:
+                continue
+            if "-" in item:
+                code_values.add(item.partition("-")[2].strip())
+            else:
+                code_values.add(item)
+
+
+
+            row["flag_issues"].append(
+                "枚举值有且仅有'是'和'否'两项，该字段应为标志类而非代码枚举类"
+            )
+            flagged += 1
+
+    print(f"  发现 {flagged} 行代码枚举类字段实为标志类")
+    return {"rows": rows}
+
+
+# ============================================================
+# 节点 5: 汇总检查结果
 # ============================================================
 
 def combine_results_node(state: GraphState) -> dict:
-    """汇总规则检查、业务含义检查、枚举规范化的结果，判定通过/不通过。"""
-    print("\n=== 步骤 4/5: 汇总检查结果 ===")
+    """汇总规则检查、业务含义检查、标志类误用检查、枚举规范化的结果，判定通过/不通过。"""
+    print("\n=== 步骤 5/6: 汇总检查结果 ===")
     rows = state["rows"]
 
     semantic_map = {r["row_index"]: r for r in state.get("semantic_results", [])}
@@ -259,6 +332,10 @@ def combine_results_node(state: GraphState) -> dict:
         if row["rule_issues"]:
             reasons.extend(row["rule_issues"])
 
+        # 标志类误用问题
+        if row["flag_issues"]:
+            reasons.extend(row["flag_issues"])
+
         # 业务含义检查结果
         if idx in semantic_map:
             sr = semantic_map[idx]
@@ -269,7 +346,7 @@ def combine_results_node(state: GraphState) -> dict:
         else:
             # 未被 LLM 检查的行
             if not row["business_meaning"]:
-                # 业务定义为空，规则检查5已处理，此处跳过
+                # 业务定义为空，规则检查的非空项已处理，此处跳过
                 row["is_meaningful"] = True
                 row["meaning_reason"] = ""
             else:
@@ -298,11 +375,11 @@ def combine_results_node(state: GraphState) -> dict:
 
 
 # ============================================================
-# 节点 5: 写入 Excel
+# 节点 6: 写入 Excel
 # ============================================================
 
 def write_excel_node(state: GraphState) -> dict:
     """将检查结果写入输出 Excel。"""
-    print("\n=== 步骤 5/5: 写入结果 Excel ===")
+    print("\n=== 步骤 6/6: 写入结果 Excel ===")
     write_excel(state["output_file"], state["rows"], state["input_file"])
     return {}

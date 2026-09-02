@@ -67,9 +67,4 @@ DOMAIN_WHITELIST = {
         "anc_var", "anc_fix",
     },
     "标志类": {"n_fix"},  # 特殊：仅 n!(1)，在节点中额外校验长度
-    "代码枚举类": {
-        "a_var", "a_fix",
-        "n_var", "n_fix",
-        "an_var", "an_fix",
-    },
 }

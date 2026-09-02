@@ -133,6 +133,8 @@ def read_excel(file_path: str) -> list[RowData]:
 
             enum_needs_normalization=False,
 
+            flag_issues=[],
+
             check_result="",
 
             fail_reason="",
