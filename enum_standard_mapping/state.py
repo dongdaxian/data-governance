@@ -30,7 +30,7 @@ class FieldToMap(TypedDict):
     field_name: str           # 字段中文名
     field_type: str           # 字段所属类型（恒为代码枚举类）
     business_meaning: str     # 业务含义
-    enum_values: str          # 原始格式化枚举值文本
+    enum_values: str          # 枚举值文本（质检输出中已规范化覆盖）
 
     # load_and_score 节点产出
     pairs: list[tuple[str, str]]      # 解析后的 n 条 (码, 值)

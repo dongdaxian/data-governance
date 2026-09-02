@@ -6,9 +6,9 @@
 
   输入 Excel 格式：第1行合并表头"基本信息"，第2行列名，第3行+数据。
 
-写入：在原始数据基础上追加三列检查结果，输出新 Excel。
+写入：在原始数据基础上填写检查结果，输出新 Excel。
 
-  输出列：格式化枚举值、检查结果、说明（与申请单模板一致）。
+  枚举值规范化结果直接覆盖"枚举值(选填)"列；另填"检查结果"、"说明"两列。
 
 """
 
@@ -18,8 +18,6 @@ import pandas as pd
 from quality_check.constants import (
 
     INPUT_COLUMNS,
-
-    COL_FORMATTED_ENUM,
 
     COL_CHECK_RESULT,
 
@@ -131,8 +129,6 @@ def read_excel(file_path: str) -> list[RowData]:
 
             normalized_enum="",
 
-            enum_needs_normalization=False,
-
             flag_issues=[],
 
             check_result="",
@@ -153,7 +149,9 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
 
     完整复制输入文件作为输出（保留全部原始列、数据、合并表头和格式），
 
-    按第2行列名定位"格式化枚举值/检查结果/说明"三列，从第3行起填入检查结果。
+    按第2行列名定位"枚举值(选填)/检查结果/说明"三列，从第3行起填入：
+
+    枚举值列直接写入规范化后的枚举值（无规范化结果时保留原值）。
 
     """
 
@@ -161,24 +159,26 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
 
     from openpyxl import load_workbook
 
+    enum_col = INPUT_COLUMNS["enum_values"][0]
+
     # 1. 完整复制输入文件作为输出文件
     shutil.copyfile(input_file, file_path)
 
-    # 2. 打开输出文件，从第2行（列名行）按列名精确匹配定位三个结果列
+    # 2. 打开输出文件，从第2行（列名行）按列名精确匹配定位结果列
     wb = load_workbook(file_path)
     ws = wb.active
 
     col_index: dict[str, int] = {}
     for col in range(1, ws.max_column + 1):
         name = _safe_str(ws.cell(row=2, column=col).value)
-        if name in (COL_FORMATTED_ENUM, COL_CHECK_RESULT, COL_FAIL_REASON):
+        if name in (enum_col, COL_CHECK_RESULT, COL_FAIL_REASON):
             col_index[name] = col
 
-    missing = [n for n in (COL_FORMATTED_ENUM, COL_CHECK_RESULT, COL_FAIL_REASON)
+    missing = [n for n in (enum_col, COL_CHECK_RESULT, COL_FAIL_REASON)
                if n not in col_index]
     if missing:
         raise ValueError(
-            f"输入Excel缺少结果列: {missing}，请检查模板是否包含质量检查结果列。"
+            f"输入Excel缺少必填列: {missing}，请检查模板是否与申请单格式一致。"
         )
 
     # 3. 从第3行起按 index 升序逐行填入结果
@@ -186,8 +186,8 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
     for r in sorted_rows:
         excel_row = 3 + r["index"]
         ws.cell(
-            row=excel_row, column=col_index[COL_FORMATTED_ENUM],
-            value=r["normalized_enum"] if r["normalized_enum"] else "",
+            row=excel_row, column=col_index[enum_col],
+            value=r["normalized_enum"] or r["enum_values"],
         )
         ws.cell(row=excel_row, column=col_index[COL_CHECK_RESULT], value=r["check_result"])
         ws.cell(row=excel_row, column=col_index[COL_FAIL_REASON], value=r["fail_reason"])

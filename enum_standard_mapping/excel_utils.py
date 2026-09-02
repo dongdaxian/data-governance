@@ -56,7 +56,7 @@ def read_excel(file_path: str) -> list[FieldToMap]:
     if missing:
         raise ValueError(
             f"输入Excel缺少必填列: {missing}，"
-            f"请检查输入文件是否为质检输出格式（需含'格式化枚举值'列）。"
+            f"请检查输入文件是否为质检输出格式（需含'枚举值(选填)'列）。"
         )
 
     rows: list[FieldToMap] = []

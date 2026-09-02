@@ -36,16 +36,26 @@ def call_with_retry(llm: ChatOpenAI, schema, system_text: str, user_text: str):
     messages = [SystemMessage(content=system_text), HumanMessage(content=user_text)]
 
     for attempt in range(MAX_RETRIES):
+        print(f"  [LLM 调用] 第 {attempt + 1}/{MAX_RETRIES} 次尝试")
+        print(f"  [LLM 调用] system({len(system_text)}字): {system_text}")
+        print(f"  [LLM 调用] user({len(user_text)}字): {user_text}")
+        start = time.perf_counter()
         try:
             result = structured_llm.invoke(messages)
+            elapsed = time.perf_counter() - start
+            print(f"  [LLM 调用] 耗时 {elapsed:.1f}秒，返回: {result}")
             if result is None:
                 raise ValueError("LLM returned None (function call not invoked)")
             return result
         except Exception as e:
+            elapsed = time.perf_counter() - start
             if attempt == MAX_RETRIES - 1:
                 raise RuntimeError(f"LLM 调用失败（重试{MAX_RETRIES}次后仍报错）: {e}") from e
-            wait = 2 ** attempt
-            print(f"  [重试 {attempt + 1}/{MAX_RETRIES}] {wait}秒后重试... 错误: {e}")
+            # None（未触发 function call）是模型格式抖动，短间隔快速重试；
+            # 网络/限流等异常按指数退避
+            is_format_error = isinstance(e, ValueError)
+            wait = 1 if is_format_error else 2 ** attempt
+            print(f"  [重试 {attempt + 1}/{MAX_RETRIES}] 本次耗时 {elapsed:.1f}秒，{wait}秒后重试... 错误: {e}")
             time.sleep(wait)
 
 

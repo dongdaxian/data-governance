@@ -17,8 +17,8 @@
   # 自定义输入文件
   python scripts/vector_build.py --input path/to/dict.xlsx
 
-  # 清理旧的 dict_non_enum 集合
-  python scripts/vector_build.py --cleanup-legacy
+  # 删除全部类型集合（干净重建前用）
+  python scripts/vector_build.py --cleanup
 """
 
 import argparse
@@ -49,9 +49,6 @@ DICT_PATH = os.path.join(
     "dictionary_mock",
     "全量字典_最终.xlsx",
 )
-
-LEGACY_COLLECTION = "dict_non_enum"
-
 
 def load_records(dict_path, limit=None):
     """从 Excel 读取非代码枚举类字典记录，按字段所属类型分组。
@@ -147,17 +144,18 @@ def main():
         "--dry-run", action="store_true", help="仅向量化，不写入 Milvus"
     )
     parser.add_argument(
-        "--cleanup-legacy", action="store_true",
-        help="删除旧的 dict_non_enum 集合后退出",
+        "--cleanup", action="store_true",
+        help="删除全部类型集合（dict_encode/text/number/datetime/flag）后退出",
     )
     args = parser.parse_args()
 
     client = get_client()
 
-    # 清理旧集合
-    if args.cleanup_legacy:
-        drop_collection(client, collection_name=LEGACY_COLLECTION)
-        print(f"已删除旧集合: {LEGACY_COLLECTION}")
+    # 清理全部类型集合（干净重建前用）
+    if args.cleanup:
+        for collection_name in TYPE_COLLECTION_MAP.values():
+            drop_collection(client, collection_name=collection_name)
+            print(f"已删除集合: {collection_name}")
         return
 
     # 1. 加载数据（按类型分组）

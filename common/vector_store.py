@@ -375,7 +375,9 @@ def ensure_loaded(client, collection_name=None):
     if collection_name in _loaded_collections:
         return
 
-    client.load_collection(collection_name)
+    # 显式按 1 副本加载：单节点部署只有 1 个 streaming node，
+    # 服务端默认副本数 > 1 时会报 service resource insufficient
+    client.load_collection(collection_name, replica_number=1)
     _loaded_collections.add(collection_name)
 
 

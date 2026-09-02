@@ -25,8 +25,7 @@ class RowData(TypedDict):
     meaning_reason: str       # LLM 判断过程
 
     # normalize_enum 节点产出
-    normalized_enum: str      # 规范化后的枚举值
-    enum_needs_normalization: bool  # 是否进行了规范化
+    normalized_enum: str      # 规范化后的枚举值（写 Excel 时覆盖原枚举值）
 
     # check_flag 节点产出
     flag_issues: list[str]    # 标志类误用问题列表（码值有且仅有"是"和"否"）

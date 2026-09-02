@@ -60,9 +60,6 @@ RE_DATE = re.compile(r"^DATE$", re.IGNORECASE)
 RE_TIME = re.compile(r"^TIME$", re.IGNORECASE)
 RE_DATETIME = re.compile(r"^DATETIME$", re.IGNORECASE)
 RE_TIMESTAMP = re.compile(r"^TIMESTAMP$", re.IGNORECASE)
-RE_TIME_P = re.compile(r"^TIME\((\d+)\)$", re.IGNORECASE)
-RE_DATETIME_P = re.compile(r"^DATETIME\((\d+)\)$", re.IGNORECASE)
-RE_TIMESTAMP_P = re.compile(r"^TIMESTAMP\((\d+)\)$", re.IGNORECASE)
 
 # 字符检测正则
 RE_CHINESE = re.compile(r"[\u4e00-\u9fff]")
@@ -101,9 +98,6 @@ DOMAIN_PATTERNS = [
     ("time", RE_TIME),
     ("datetime", RE_DATETIME),
     ("timestamp", RE_TIMESTAMP),
-    ("time_p", RE_TIME_P),
-    ("datetime_p", RE_DATETIME_P),
-    ("timestamp_p", RE_TIMESTAMP_P),
 ]
 
 # 域类型 -> 字符类别映射
@@ -118,7 +112,6 @@ DOMAIN_CHAR_CLASS = {
     "i_int": "i", "i_dec": "i",
     "date": "date", "time": "time",
     "datetime": "datetime", "timestamp": "timestamp",
-    "time_p": "time", "datetime_p": "datetime", "timestamp_p": "timestamp",
 }
 
 # 数据示例中的无效占位符（跳过检查）
@@ -190,8 +183,8 @@ def check_char_class(example, char_class):
             if _is_digit_char(ch):
                 return False, f"包含数字字符'{ch}'（字母+汉字类不允许数字）"
         elif char_class == "i":
-            if not (_is_digit_char(ch) or ch == "."):
-                return False, f"包含非数字字符'{ch}'（数值类仅允许数字和小数点）"
+            if not (_is_digit_char(ch) or ch in "+-."):
+                return False, f"包含非数字字符'{ch}'（数值类仅允许数字、小数点和正负号）"
         elif char_class in ("date", "time", "datetime", "timestamp"):
             # date: 仅数字+分隔符
             # time/datetime/timestamp: 额外允许小数点（毫秒分隔符）
@@ -234,32 +227,39 @@ def check_length(example, domain_key, match):
             if len(example) > limit:
                 return False, f"长度超过最大限制{limit}位，实际{len(example)}位"
 
-    # i(x): 最多 x 位整数
+    # i(x): 最多 x 位整数（符号 +/- 不计位数）
     elif domain_key == "i_int":
         x = int(match.group(1))
         if "." in example:
             return False, f"i({x})为整数类型，数据示例不应包含小数点"
-        if len(example) > x:
-            return False, f"整数部分不得超过{x}位，实际{len(example)}位"
+        digits = example.lstrip("+-")
+        if not digits:
+            return False, "数据示例不是有效的数值"
+        if len(digits) > x:
+            return False, f"整数部分不得超过{x}位，实际{len(digits)}位"
 
-    # i(x, y): 最多 x 位整数 + 最多 y 位小数
+    # i(x, y): 最多 x 位整数 + 最多 y 位小数（符号 +/- 不计位数）
     elif domain_key == "i_dec":
         x = int(match.group(1))
         y = int(match.group(2))
         if "." in example:
             parts = example.split(".", 1)
-            int_part, dec_part = parts[0], parts[1]
+            int_part, dec_part = parts[0].lstrip("+-"), parts[1]
+            if not int_part:
+                return False, "数据示例不是有效的数值"
             if len(int_part) > x:
                 return False, f"整数部分不得超过{x}位，实际{len(int_part)}位"
             if len(dec_part) > y:
                 return False, f"小数部分不得超过{y}位，实际{len(dec_part)}位"
         else:
-            if len(example) > x:
-                return False, f"整数部分不得超过{x}位，实际{len(example)}位"
+            digits = example.lstrip("+-")
+            if not digits:
+                return False, "数据示例不是有效的数值"
+            if len(digits) > x:
+                return False, f"整数部分不得超过{x}位，实际{len(digits)}位"
 
     # 日期时间类：先去除分隔符，再校验数字位数
-    elif domain_key in ("date", "time", "datetime", "timestamp",
-                        "time_p", "datetime_p", "timestamp_p"):
+    elif domain_key in ("date", "time", "datetime", "timestamp"):
         digits = example
         for sep in _DATE_SEPARATORS:
             digits = digits.replace(sep, "")
@@ -297,8 +297,6 @@ def check_length(example, domain_key, match):
                     return False, f"{domain_key.upper()}应为日期时间格式（YYYYMMDDHHmmss，14位），数据示例仅包含日期部分"
                 if len(digits) != 14:
                     return False, f"{domain_key.upper()}应为14位日期时间数字（YYYYMMDDHHmmss），实际{len(digits)}位"
-
-        # time_p / datetime_p / timestamp_p: 带精度参数，仅校验字符类型，不强制位数
 
     return True, ""
 

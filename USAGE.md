@@ -32,8 +32,8 @@ python scripts/vector_build.py --limit 10
 # 没问题后跑全量
 python scripts/vector_build.py
 
-# 如果之前跑过旧版（单集合 dict_non_enum），清理旧集合
-python scripts/vector_build.py --cleanup-legacy
+# 干净重建前，先删除全部类型集合
+python scripts/vector_build.py --cleanup
 ```
 
 首次运行会自动从 hf-mirror.com 下载 bge-large-zh-v1.5 模型（约 1.3GB），之后走本地缓存。
@@ -47,7 +47,7 @@ python scripts/vector_build.py [选项]
   --limit N          仅处理前 N 条/类型（测试用）
   --dry-run          仅向量化，不写入 Milvus
   --input PATH       自定义输入 Excel 路径
-  --cleanup-legacy   删除旧的 dict_non_enum 集合
+  --cleanup          删除全部类型集合（dict_encode/text/number/datetime/flag）
 ```
 
 ## 在代码中调用检索

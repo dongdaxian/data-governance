@@ -8,11 +8,10 @@
     |
   check_rules   -- 规则检查：非空 + 类型合法 + 枚举一致 + 域类型匹配 + 数据示例 + 重复
     |
-  +-------------------+
-  | check_semantic    |  (并行) LLM 检查业务含义
-  | normalize_enum    |  (并行) LLM 规范化枚举值
-  +-------------------+
-          |
+  normalize_enum    -- LLM 规范化枚举值
+    |
+  check_semantic    -- LLM 检查业务含义
+    |
   check_flag     -- 标志类误用检查：仅此前检查无问题的代码枚举类记录，
                     规范化后码值有且仅有"是"和"否"判为应申报标志类
           |
@@ -57,6 +56,17 @@ def check_rules_node(state: GraphState) -> dict:
     """
     print("\n=== 步骤 2/6: 规则检查（非空+类型+枚举+域类型+数据示例+重复）===")
     rows = state["rows"]
+
+    # --- 预处理：内容仅为"无"的字段视为未填写，替换为空（中文表名除外） ---
+
+    data_fields = (
+        "field_name", "field_type", "domain_type",
+        "data_example", "is_enum", "business_meaning", "enum_values",
+    )
+    for row in rows:
+        for f in data_fields:
+            if row[f] == "无":
+                row[f] = ""
 
     # --- 第一阶段：逐行规则检查 ---
 
@@ -179,7 +189,7 @@ def check_rules_node(state: GraphState) -> dict:
 
 
 # ============================================================
-# 节点 3a: LLM 业务含义检查（与节点3b并行执行）
+# 节点 3b: LLM 业务含义检查（枚举值规范化之后执行）
 # ============================================================
 
 def check_semantic_node(state: GraphState) -> dict:
@@ -187,7 +197,7 @@ def check_semantic_node(state: GraphState) -> dict:
 
     仅跳过业务定义为空的行，与规则检查结果互不影响。
     """
-    print("\n=== 步骤 3a/6: LLM 业务含义检查 ===")
+    print("\n=== 步骤 3b/6: LLM 业务含义检查 ===")
     rows = state["rows"]
 
     rows_to_check = [
@@ -217,7 +227,7 @@ def check_semantic_node(state: GraphState) -> dict:
 
 
 # ============================================================
-# 节点 3b: LLM 枚举值规范化（与节点3a并行执行）
+# 节点 3a: LLM 枚举值规范化（check_rules 之后执行）
 # ============================================================
 
 def normalize_enum_node(state: GraphState) -> dict:
@@ -225,7 +235,7 @@ def normalize_enum_node(state: GraphState) -> dict:
 
     仅跳过枚举值为空的行，与规则检查结果互不影响。
     """
-    print("\n=== 步骤 3b/6: LLM 枚举值规范化 ===")
+    print("\n=== 步骤 3a/6: LLM 枚举值规范化 ===")
     rows = state["rows"]
 
     rows_with_enum = [
@@ -301,8 +311,6 @@ def check_flag_node(state: GraphState) -> dict:
             else:
                 code_values.add(item)
 
-
-
             row["flag_issues"].append(
                 "枚举值有且仅有'是'和'否'两项，该字段应为标志类而非代码枚举类"
             )
@@ -357,9 +365,7 @@ def combine_results_node(state: GraphState) -> dict:
 
         # 枚举值规范化结果
         if idx in enum_map:
-            er = enum_map[idx]
-            row["normalized_enum"] = er["normalized"]
-            row["enum_needs_normalization"] = er["needs_normalization"]
+            row["normalized_enum"] = enum_map[idx]["normalized"]
 
         # 判定最终结果
         if reasons:

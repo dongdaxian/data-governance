@@ -34,7 +34,6 @@ INPUT_COLUMNS = {
 # 输出列名（与申请单模板一致）
 # ============================================================
 
-COL_FORMATTED_ENUM = "格式化枚举值"
 COL_CHECK_RESULT = "检查结果"
 COL_FAIL_REASON = "说明"
 
@@ -46,7 +45,6 @@ DOMAIN_WHITELIST = {
     "数值类": {"i_int", "i_dec"},
     "日期时间类": {
         "date", "time", "datetime", "timestamp",
-        "time_p", "datetime_p", "timestamp_p",
         "n_fix", "n_var",
         "an_fix", "an_var",
         "anc_fix", "anc_var",

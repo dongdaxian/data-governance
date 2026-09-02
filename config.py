@@ -34,7 +34,7 @@ load_dotenv()
 
 # ============================================================
 
-# LLM 配置 -- 火山引擎 coding plan (GLM-5.2)
+# LLM 配置 -- 火山引擎 coding plan 
 
 # ============================================================
 
@@ -54,7 +54,7 @@ BASE_URL = os.getenv("BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v
 
 # 模型名称
 
-LLM_MODEL = os.getenv("LLM_MODEL", "glm-5.3")
+LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-flash")
 
 
 
@@ -62,7 +62,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "glm-5.3")
 
 LLM_TEMPERATURE = 0.1  # 低温度确保判断结果稳定一致
 
-LLM_MAX_TOKENS = 4096
+LLM_MAX_TOKENS = 100000
 
 
 
@@ -121,7 +121,7 @@ EMBED_DIMENSION = 1024
 
 EMBED_QUERY_INSTRUCTION = '为这个句子生成表示以用于检索相关文章：'
 # 向量化设备：cpu 或 cuda（有 GPU 时设为 cuda 可大幅加速）
-EMBED_DEVICE = os.getenv('EMBED_DEVICE', 'cpu')
+EMBED_DEVICE = os.getenv('EMBED_DEVICE', 'cuda')
 
 
 # 全量字典文件路径（用于候选标准信息回填）

@@ -5,8 +5,8 @@
 生成：../data/qc_input.xlsx
 
 Excel 格式：
-  第1行：合并表头"基本信息"（跨26列）+"数管反馈"（跨3列）
-  第2行：29列列名
+  第1行：合并表头"基本信息"（跨26列）+"数管反馈"（跨2列）
+  第2行：28列列名
   第3行+：数据
 
 样例说明：
@@ -20,7 +20,7 @@ import pandas as pd
 from openpyxl import load_workbook
 
 
-# 申请单全部 29 列的默认空值，保证生成格式与真实申请单一致
+# 申请单全部 28 列的默认空值，保证生成格式与真实申请单一致
 _EMPTY = {
     "贴源接口(必填)": "",
     "贴源接口文件中文名(必填)": "",
@@ -48,7 +48,6 @@ _EMPTY = {
     "更新标准编号(选填)": "",
     "业务定义(必填)": "",
     "业务口径(选填)": "",
-    "格式化枚举值": "",
     "检查结果": "",
     "说明": "",
 }
@@ -226,13 +225,13 @@ def main():
     output = os.path.join(project_root, "data", "qc_input.xlsx")
     df.to_excel(output, index=False)
 
-    # 第1行插入合并表头："基本信息"（跨26列）+ "数管反馈"（跨3列）
+    # 第1行插入合并表头："基本信息"（跨26列）+ "数管反馈"（跨2列）
     wb = load_workbook(output)
     ws = wb.active
     ws.insert_rows(1)
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=26)
     ws.cell(row=1, column=1, value="基本信息")
-    ws.merge_cells(start_row=1, start_column=27, end_row=1, end_column=29)
+    ws.merge_cells(start_row=1, start_column=27, end_row=1, end_column=28)
     ws.cell(row=1, column=27, value="数管反馈")
     wb.save(output)
 
