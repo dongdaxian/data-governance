@@ -311,6 +311,7 @@ def check_flag_node(state: GraphState) -> dict:
             else:
                 code_values.add(item)
 
+        if code_values == {"是", "否"}:
             row["flag_issues"].append(
                 "枚举值有且仅有'是'和'否'两项，该字段应为标志类而非代码枚举类"
             )
