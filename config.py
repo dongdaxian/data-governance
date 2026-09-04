@@ -121,7 +121,7 @@ EMBED_DIMENSION = 1024
 
 EMBED_QUERY_INSTRUCTION = '为这个句子生成表示以用于检索相关文章：'
 # 向量化设备：cpu 或 cuda（有 GPU 时设为 cuda 可大幅加速）
-EMBED_DEVICE = os.getenv('EMBED_DEVICE', 'cuda')
+EMBED_DEVICE = os.getenv('EMBED_DEVICE', 'cpu')
 
 
 # 全量字典文件路径（用于候选标准信息回填）
