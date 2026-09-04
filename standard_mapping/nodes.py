@@ -19,7 +19,8 @@ from standard_mapping.excel_utils import read_excel, write_excel
 from standard_mapping.llm import get_llm, select_standard
 from standard_mapping.constants import NON_ENUM_TYPES
 from common.domain_rules import check_data_example
-from common.vector_store import search as vector_search
+from common.vector_store import search as vector_search, translate_milvus_error
+from common.exceptions import NonRetryableError
 from common.dictionary_store import (
     get_by_ids as get_standards_by_ids,
     get_by_name as get_standards_by_name,
@@ -144,17 +145,30 @@ def load_and_fetch_node(state: MappingGraphState) -> dict:
     if enum_count > 0:
         print(f"  筛选: 排除 {enum_count} 行代码枚举类字段，保留 {len(rows)} 行非枚举类字段")
 
-    # 向量检索 + 字典回填获取备选标准
+    # 向量检索 + 字典回填获取备选标准（连续不可重试错误熔断）
+    consecutive_config_errors = 0
     for row in rows:
         try:
             row["candidates"] = fetch_candidates(
                 row["field_name"], row["business_meaning"], row["field_type"]
             )
             row["candidate_fetch_error"] = ""
+            consecutive_config_errors = 0
         except Exception as e:
             row["candidates"] = []
-            row["candidate_fetch_error"] = f"候选检索失败: {e}"
-            print(f"  行 {row['index']} 候选检索失败: {e}")
+            translated = translate_milvus_error(e)
+            if isinstance(translated, NonRetryableError):
+                consecutive_config_errors += 1
+                row["candidate_fetch_error"] = f"配置/鉴权错误: {translated}"
+                print(f"  行 {row['index']} 配置/鉴权错误（不重试）: {translated}")
+                if consecutive_config_errors >= 3:
+                    raise RuntimeError(
+                        f"连续 {consecutive_config_errors} 行遇到不可重试错误，"
+                        f"疑似配置问题（如 MILVUS_TOKEN 错误），已中止任务，请检查配置后重跑: {translated}"
+                    ) from e
+            else:
+                row["candidate_fetch_error"] = f"候选检索失败: {e}"
+                print(f"  行 {row['index']} 候选检索失败: {e}")
 
     print(f"  备选标准获取完成: {len(rows)} 行")
     return {"rows": rows, "domain_results": [], "selection_results": [], "include_candidates": state.get("include_candidates", True)}

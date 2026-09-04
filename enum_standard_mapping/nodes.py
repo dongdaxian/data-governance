@@ -34,7 +34,8 @@ from config import (
     ENUM_CANDIDATE_TOP_N,
     ENUM_VALUE_COLLECTION,
 )
-from common.vector_store import get_client, ensure_loaded
+from common.vector_store import get_client, ensure_loaded, translate_milvus_error
+from common.exceptions import NonRetryableError
 from common.dictionary_store import _load as _load_dict_df
 
 _logger = logging.getLogger(__name__)
@@ -105,13 +106,26 @@ def load_and_score_node(state: EnumMappingGraphState) -> dict:
     client = get_client()
     ensure_loaded(client, ENUM_VALUE_COLLECTION)
 
+    consecutive_config_errors = 0
     for row in rows:
         try:
             _score_row(row)
+            consecutive_config_errors = 0
         except Exception as e:
             row["candidates"] = []
-            row["candidate_fetch_error"] = f"候选检索失败: {e}"
-            print(f"  行 {row['index']} 候选检索失败: {e}")
+            translated = translate_milvus_error(e)
+            if isinstance(translated, NonRetryableError):
+                consecutive_config_errors += 1
+                row["candidate_fetch_error"] = f"配置/鉴权错误: {translated}"
+                print(f"  行 {row['index']} 配置/鉴权错误（不重试）: {translated}")
+                if consecutive_config_errors >= 3:
+                    raise RuntimeError(
+                        f"连续 {consecutive_config_errors} 行遇到不可重试错误，"
+                        f"疑似配置问题（如 MILVUS_TOKEN 错误），已中止任务，请检查配置后重跑: {translated}"
+                    ) from e
+            else:
+                row["candidate_fetch_error"] = f"候选检索失败: {e}"
+                print(f"  行 {row['index']} 候选检索失败: {e}")
 
     print(f"  枚举值打分完成: {len(rows)} 行")
     return {"rows": rows, "selection_results": [], "include_candidates": state.get("include_candidates", False)}

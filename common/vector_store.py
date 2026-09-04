@@ -115,7 +115,15 @@ _existing = os.environ.get("NO_PROXY", "")
 os.environ["NO_PROXY"] = _existing + "," + _hf_domains if _existing else _hf_domains
 
 
-from pymilvus import MilvusClient, DataType, Function, FunctionType
+from pymilvus import MilvusClient, DataType, Function, FunctionType, MilvusException
+
+from common.exceptions import (
+    GovernanceError,
+    NonRetryableError,
+    MilvusAuthError,
+    MilvusConnectionError,
+    MilvusSchemaError,
+)
 
 
 # ============================================================
@@ -130,8 +138,27 @@ MAX_RETRIES = 5
 RETRY_BASE_DELAY = 3  # 秒
 
 
+def translate_milvus_error(e: Exception) -> GovernanceError:
+    """将 Milvus 原始异常翻译为分类异常，供重试与上层熔断判断。
+
+    未识别的异常保守当作可重试的连接类错误（保持原有重试行为）。
+    """
+    if isinstance(e, GovernanceError):
+        return e
+
+    msg = str(e).lower()
+
+    if isinstance(e, MilvusException):
+        if any(k in msg for k in ("unauthenticated", "invalid credential", "permission", "authentication")):
+            return MilvusAuthError(f"Milvus 鉴权失败，请检查 MILVUS_TOKEN: {e}")
+        if any(k in msg for k in ("collection not found", "field not found", "dimension", "schema")):
+            return MilvusSchemaError(f"Milvus schema 不匹配: {e}")
+
+    return MilvusConnectionError(f"Milvus 连接/网络错误: {type(e).__name__}: {e}")
+
+
 def with_retry(func):
-    """带指数退避的重试装饰器，适用于 Milvus 连接和操作。"""
+    """带指数退避的重试装饰器；不可重试错误（鉴权/配置/schema）立刻抛出不重试。"""
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -143,7 +170,12 @@ def with_retry(func):
                 return func(*args, **kwargs)
 
             except Exception as e:
-                last_error = e
+                translated = translate_milvus_error(e)
+
+                if isinstance(translated, NonRetryableError):
+                    raise translated from e
+
+                last_error = translated
 
                 if attempt < MAX_RETRIES - 1:
                     delay = RETRY_BASE_DELAY * (2**attempt)
@@ -152,7 +184,7 @@ def with_retry(func):
                         "操作失败 (尝试 %d/%d): %s，%ds 后重试...",
                         attempt + 1,
                         MAX_RETRIES,
-                        type(e).__name__,
+                        type(translated).__name__,
                         delay,
                     )
 

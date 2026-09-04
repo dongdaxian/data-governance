@@ -18,6 +18,13 @@ from config import (
     MAX_RETRIES,
 )
 
+from common.exceptions import (
+    LLMAuthError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+    LLMResponseFormatError,
+)
+
 
 def get_llm() -> ChatOpenAI:
     """创建 LLM 实例。"""
@@ -28,6 +35,31 @@ def get_llm() -> ChatOpenAI:
         temperature=LLM_TEMPERATURE,
         max_tokens=LLM_MAX_TOKENS,
     )
+
+
+def translate_llm_error(e: Exception):
+    """将 LLM 原始异常翻译为分类异常。
+
+    注意：LLMResponseFormatError 归为可重试——结构化输出偶发格式抖动
+    （function call 未触发等）快速重试即可恢复，与原快速重试逻辑一致。
+    """
+    try:
+        import openai
+    except ImportError:
+        openai = None
+
+    if openai is not None:
+        if isinstance(e, openai.AuthenticationError):
+            return LLMAuthError(f"LLM API Key 无效或过期: {e}")
+        if isinstance(e, openai.RateLimitError):
+            return LLMRateLimitError(f"LLM 触发限流: {e}")
+        if isinstance(e, (openai.APITimeoutError, openai.APIConnectionError)):
+            return LLMTimeoutError(f"LLM 网络超时/连接错误: {e}")
+
+    if isinstance(e, (ValueError, KeyError)):
+        return LLMResponseFormatError(f"LLM 返回格式异常: {e}")
+
+    return LLMTimeoutError(f"未分类 LLM 错误: {type(e).__name__}: {e}")
 
 
 def call_with_retry(llm: ChatOpenAI, schema, system_text: str, user_text: str):
@@ -49,11 +81,15 @@ def call_with_retry(llm: ChatOpenAI, schema, system_text: str, user_text: str):
             return result
         except Exception as e:
             elapsed = time.perf_counter() - start
+            translated = translate_llm_error(e)
+            # 鉴权/配置类错误重试无意义，立刻向上抛
+            if isinstance(translated, LLMAuthError):
+                raise translated from e
             if attempt == MAX_RETRIES - 1:
                 raise RuntimeError(f"LLM 调用失败（重试{MAX_RETRIES}次后仍报错）: {e}") from e
-            # None（未触发 function call）是模型格式抖动，短间隔快速重试；
+            # 格式抖动（function call 未触发等）短间隔快速重试；
             # 网络/限流等异常按指数退避
-            is_format_error = isinstance(e, ValueError)
+            is_format_error = isinstance(translated, LLMResponseFormatError)
             wait = 1 if is_format_error else 2 ** attempt
             print(f"  [重试 {attempt + 1}/{MAX_RETRIES}] 本次耗时 {elapsed:.1f}秒，{wait}秒后重试... 错误: {e}")
             time.sleep(wait)
