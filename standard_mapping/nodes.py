@@ -276,9 +276,15 @@ def select_standard_node(state: MappingGraphState) -> dict:
     # 应用 LLM 结果
     selection_results = []
     result_map = {r["row_index"]: r for r in results}
+    sent_indices = {r["row_index"] for r in rows_to_select}
+    missing_count = 0
     for row in rows:
         idx = row["index"]
         if idx not in result_map:
+            if idx in sent_indices:
+                row["mapping_result"] = "LLM未返回该行结果，需人工复核"
+                row["llm_reason"] = "LLM 调用成功但返回结果中缺少该行，需人工复核"
+                missing_count += 1
             continue
 
         r = result_map[idx]
@@ -290,6 +296,8 @@ def select_standard_node(state: MappingGraphState) -> dict:
             row["llm_reason"] += f" 扩展建议: {r['extension_suggestion']}"
         selection_results.append(r)
 
+    if missing_count:
+        print(f"  [WARNING] LLM 返回结果缺少 {missing_count} 行，已标记需人工复核")
     print(f"  标准选择完成，共 {len(selection_results)} 条结果")
     return {"rows": rows, "selection_results": selection_results}
 
