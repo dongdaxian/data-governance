@@ -163,7 +163,7 @@ def check_char_class(example, char_class):
     """
     for ch in example:
         if char_class == "n":
-            if not (_is_digit_char(ch) or ch in _DATE_SEPARATORS):
+            if not _is_digit_char(ch):
                 return False, f"包含非法字符'{ch}'（数字字符类仅允许数字）"
         elif char_class == "a":
             if _is_digit_char(ch) or _is_chinese_char(ch):

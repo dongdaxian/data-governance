@@ -4,11 +4,12 @@
 构建数据质量检查的工作流图。
 
 图拓扑：
-  START -> load_excel -> check_rules -> normalize_enum -> check_semantic -> check_flag -> combine_results -> write_excel -> END
+  START -> load_excel -> check_rules -> normalize_enum -> check_semantic -> check_flag -> combine_results -> check_field_type -> write_excel -> END
 
 normalize_enum 和 check_semantic 串行执行，各自写入独立的状态字段，
 check_flag 在两者完成后执行标志类误用检查，
-combine_results 作为 barrier 节点汇总。
+combine_results 作为 barrier 节点汇总，
+check_field_type 在汇总后执行字段所属类型软性提醒（不影响检查结果列）。
 """
 
 from langgraph.graph import StateGraph, START, END
@@ -21,6 +22,7 @@ from quality_check.nodes import (
     normalize_enum_node,
     check_flag_node,
     combine_results_node,
+    check_field_type_node,
     write_excel_node,
 )
 
@@ -36,6 +38,7 @@ def build_graph():
     workflow.add_node("normalize_enum", normalize_enum_node)
     workflow.add_node("check_flag", check_flag_node)
     workflow.add_node("combine_results", combine_results_node)
+    workflow.add_node("check_field_type", check_field_type_node)
     workflow.add_node("write_excel", write_excel_node)
 
     # 串行边
@@ -47,7 +50,8 @@ def build_graph():
     # 收尾
     workflow.add_edge("check_semantic", "check_flag")
     workflow.add_edge("check_flag", "combine_results")
-    workflow.add_edge("combine_results", "write_excel")
+    workflow.add_edge("combine_results", "check_field_type")
+    workflow.add_edge("check_field_type", "write_excel")
     workflow.add_edge("write_excel", END)
 
     return workflow.compile()

@@ -17,6 +17,8 @@
           |
   combine_results -- 汇总所有检查结果，判定通过/不通过
           |
+  check_field_type -- LLM 字段所属类型软性提醒（仅已通过行，不影响检查结果列）
+          |
   write_excel     -- 输出结果 Excel
           |
   END
@@ -24,7 +26,12 @@
 
 from quality_check.state import GraphState, RowData
 from quality_check.excel_utils import read_excel, write_excel
-from quality_check.llm import get_llm, check_business_meaning, normalize_enum_values
+from quality_check.llm import (
+    get_llm,
+    check_business_meaning,
+    normalize_enum_values,
+    check_field_types,
+)
 from quality_check.constants import (
     VALID_FIELD_TYPES,
     DOMAIN_WHITELIST,
@@ -137,10 +144,10 @@ def check_rules_node(state: GraphState) -> dict:
                         f"域类型'{row['domain_type']}'不允许用于字段所属类型'{row['field_type']}'"
                     )
                 elif row["field_type"] == "标志类":
-                    # 标志类特殊校验：仅允许 n!(1)
+                    # 标志类特殊校验：仅允许 n!(1) 或 n..(1)
                     if domain_match.group(1) != "1":
                         issues.append(
-                            f"标志类字段的域类型必须为n!(1)，实际为'{row['domain_type']}'"
+                            f"标志类字段的域类型必须为n!(1)或n..(1)，实际为'{row['domain_type']}'"
                         )
 
         # 域类型与数据示例相符（类型不合法或代码枚举类直接跳过）
@@ -371,7 +378,7 @@ def combine_results_node(state: GraphState) -> dict:
         # 判定最终结果
         if reasons:
             row["check_result"] = "不通过"
-            row["fail_reason"] = "; ".join(reasons)
+            row["fail_reason"] = "\n".join(f"{i}. {r}" for i, r in enumerate(reasons, 1))
         else:
             row["check_result"] = "通过"
             row["fail_reason"] = ""
@@ -379,6 +386,58 @@ def combine_results_node(state: GraphState) -> dict:
     passed = sum(1 for r in rows if r["check_result"] == "通过")
     print(f"  检查结果: 通过 {passed} 行，不通过 {len(rows) - passed} 行")
     return {"rows": rows}
+
+
+# ============================================================
+# 节点 5b: 字段所属类型检查（汇总后执行，软性提醒）
+# ============================================================
+
+def check_field_type_node(state: GraphState) -> dict:
+    """调用 LLM 检查"字段所属类型"是否填写正确（软性提醒）。
+
+    仅对检查结果已通过的记录执行（业务定义非空），
+    结果写入"所属类型检查结果"列，不影响"检查结果"列判定。
+    """
+    print("\n=== 步骤 5b/6: LLM 字段所属类型检查（软性提醒）===")
+    rows = state["rows"]
+
+    rows_to_check = [
+        {
+            "row_index": r["index"],
+            "中文字段名": r["field_name"],
+            "业务定义": r["business_meaning"],
+            "字段所属类型": r["field_type"],
+        }
+        for r in rows
+        if r["check_result"] == "通过" and r["business_meaning"]
+    ]
+
+    if not rows_to_check:
+        print("  没有需要检查的行（检查结果通过且业务定义非空）")
+        return {"type_check_results": []}
+
+    print(f"  共 {len(rows_to_check)} 行需要检查字段所属类型")
+    try:
+        llm = get_llm()
+        results = check_field_types(llm, rows_to_check)
+        result_map = {r["row_index"]: r for r in results}
+        for row in rows:
+            r = result_map.get(row["index"])
+            if r is None:
+                continue
+            if r["is_correct"]:
+                row["type_check_result"] = ""
+            else:
+                row["type_check_result"] = (
+                    f"因为{r['reason']}，当前字段所属类型可能错误，"
+                    f"应为{r['correct_type']}，请联系业务确认"
+                )
+        print(f"  字段所属类型检查完成，共 {len(results)} 条结果")
+        return {"type_check_results": results}
+    except Exception as e:
+        print(f"  [WARNING] LLM 字段所属类型检查失败: {e}")
+        print(f"  跳过所属类型检查，仅输出规则检查结果")
+        return {"type_check_results": []}
 
 
 # ============================================================

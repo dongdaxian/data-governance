@@ -34,6 +34,9 @@ class RowData(TypedDict):
     check_result: str         # "通过" / "不通过"
     fail_reason: str          # 不通过原因汇总
 
+    # check_field_type 节点产出
+    type_check_result: str    # 所属类型检查结果（软性提醒，判断错误时非空）
+
 
 class GraphState(TypedDict):
     """LangGraph 全局状态。"""
@@ -42,6 +45,7 @@ class GraphState(TypedDict):
     output_file: str
     semantic_results: list[dict]
     enum_results: list[dict]
+    type_check_results: list[dict]
 
 
 # ============================================================
@@ -73,3 +77,16 @@ class EnumNormalizationItem(BaseModel):
 class EnumNormalizationResult(BaseModel):
     """批量枚举值规范化结果。"""
     results: list[EnumNormalizationItem] = Field(description="每行的规范化结果列表")
+
+
+class FieldTypeCheckItem(BaseModel):
+    """单行字段所属类型检查结果。"""
+    row_index: int = Field(description="行号，与输入数据中的row_index对应")
+    is_correct: bool = Field(description="当前字段所属类型是否正确。true=正确，false=可能错误")
+    correct_type: str = Field(description="判断应为的字段所属类型（六类之一）。is_correct为false时必填")
+    reason: str = Field(description="判断过程和原因说明，需详细描述比较分析的过程")
+
+
+class FieldTypeCheckResult(BaseModel):
+    """批量字段所属类型检查结果。"""
+    results: list[FieldTypeCheckItem] = Field(description="每行的检查结果列表")

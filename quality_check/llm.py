@@ -13,12 +13,15 @@ from common.llm_client import get_llm, call_with_retry, chunked
 from quality_check.state import (
     BusinessMeaningResult,
     EnumNormalizationResult,
+    FieldTypeCheckResult,
 )
 from quality_check.prompts import (
     BUSINESS_MEANING_SYSTEM,
     BUSINESS_MEANING_USER,
     ENUM_NORMALIZATION_SYSTEM,
     ENUM_NORMALIZATION_USER,
+    FIELD_TYPE_CHECK_SYSTEM,
+    FIELD_TYPE_CHECK_USER,
 )
 
 
@@ -121,6 +124,59 @@ def normalize_enum_values(
                 "row_index": item.row_index,
                 "normalized": item.normalized,
                 "needs_normalization": item.needs_normalization,
+            })
+
+    return all_results
+
+
+# ============================================================
+# 字段所属类型检查
+# ============================================================
+
+def check_field_type_batch(
+    llm: ChatOpenAI,
+    rows: list[dict],
+) -> FieldTypeCheckResult:
+    """调用 LLM 批量检查字段所属类型是否正确。
+
+    Args:
+        llm: LLM 实例
+        rows: [{"row_index": 0, "中文字段名": "...", "业务定义": "...", "字段所属类型": "..."}, ...]
+
+    Returns:
+        FieldTypeCheckResult
+    """
+    data_str = json.dumps(rows, ensure_ascii=False, indent=2)
+    user_text = FIELD_TYPE_CHECK_USER.format(data=data_str)
+    return call_with_retry(llm, FieldTypeCheckResult, FIELD_TYPE_CHECK_SYSTEM, user_text)
+
+
+def check_field_types(
+    llm: ChatOpenAI,
+    rows_data: list[dict],
+) -> list[dict]:
+    """分批调用 LLM 检查字段所属类型，返回扁平结果列表。
+
+    Args:
+        llm: LLM 实例
+        rows_data: [{"row_index": 0, "中文字段名": "...", "业务定义": "...", "字段所属类型": "..."}, ...]
+
+    Returns:
+        [{"row_index": 0, "is_correct": True, "correct_type": "", "reason": "..."}, ...]
+    """
+    all_results = []
+    total = len(rows_data)
+
+    for i, batch in enumerate(chunked(rows_data, BATCH_SIZE)):
+        print(f"  [所属类型检查] 批次 {i + 1}/{(total + BATCH_SIZE - 1) // BATCH_SIZE}，"
+              f"处理 {len(batch)} 行...")
+        result = check_field_type_batch(llm, batch)
+        for item in result.results:
+            all_results.append({
+                "row_index": item.row_index,
+                "is_correct": item.is_correct,
+                "correct_type": item.correct_type,
+                "reason": item.reason,
             })
 
     return all_results

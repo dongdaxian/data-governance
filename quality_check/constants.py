@@ -36,6 +36,7 @@ INPUT_COLUMNS = {
 
 COL_CHECK_RESULT = "检查结果"
 COL_FAIL_REASON = "说明"
+COL_TYPE_CHECK_RESULT = "所属类型检查结果"
 
 # ============================================================
 # 域类型白名单（按字段所属类型）
@@ -64,5 +65,5 @@ DOMAIN_WHITELIST = {
         "an_var", "an_fix",
         "anc_var", "anc_fix",
     },
-    "标志类": {"n_fix"},  # 特殊：仅 n!(1)，在节点中额外校验长度
+    "标志类": {"n_fix", "n_var"},  # 特殊：仅 n!(1) 或 n..(1)，在节点中额外校验长度
 }
