@@ -103,6 +103,10 @@ TYPE_COLLECTION_MAP = {
     "标志类": "dict_flag",
 }
 
+# 检索权重配置：稠密路 名称/含义 子分合并权重（name + meaning = 1）
+# 字段名是选标准的主信号，名称权重应高于含义；稀疏路不合并，名称/含义各取 top_k 再并集
+DENSE_NAME_WEIGHT = float(os.getenv('DENSE_NAME_WEIGHT', '0.6'))
+
 
 
 # 代理配置：VPN/梯子场景下 gRPC 需要走 HTTP 代理隧道

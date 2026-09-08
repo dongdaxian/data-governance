@@ -301,8 +301,12 @@ def check_flag_node(state: GraphState) -> dict:
         if row["field_type"] != "代码枚举类":
             continue
 
-        # 优先使用规范化后的枚举值，规范化结果缺失时回退原始枚举值
         er = enum_map.get(row["index"])
+        # 枚举值缺代码的行已在汇总阶段判不通过，跳过标志类误用检查
+        if er is not None and not er["has_codes"]:
+            continue
+
+        # 优先使用规范化后的枚举值，规范化结果缺失时回退原始枚举值
         normalized = er["normalized"] if er else row["enum_values"]
         if not normalized:
             continue
@@ -373,7 +377,12 @@ def combine_results_node(state: GraphState) -> dict:
 
         # 枚举值规范化结果
         if idx in enum_map:
-            row["normalized_enum"] = enum_map[idx]["normalized"]
+            er = enum_map[idx]
+            if not er["has_codes"]:
+                reasons.append("枚举值缺少代码，应填写'代码-码值'形式")
+                row["normalized_enum"] = ""   # 保留原始枚举值输出
+            else:
+                row["normalized_enum"] = er["normalized"]
 
         # 判定最终结果
         if reasons:

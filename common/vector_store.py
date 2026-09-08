@@ -66,6 +66,7 @@ from config import (
     EMBED_DIMENSION,
     EMBED_QUERY_INSTRUCTION,
     EMBED_DEVICE,
+    DENSE_NAME_WEIGHT,
 )
 
 
@@ -453,42 +454,25 @@ def insert_standards(client, records, collection_name=None, batch_size=500):
 
 @with_retry
 def search(query_name, query_meaning, top_k=10, field_type=None, collection_name=None, client=None):
-    """混合检索：稠密 top_k + 稀疏 top_k -> 合并去重。
-
-
+    """混合检索：稠密 top_k + 稀疏(名称/含义) top_k -> 三路并集去重。
 
     检索流程：
-
-      1. 稠密检索：name_dense + meaning_dense 各取 top_k*3，
-
-         按 0.5/0.5 权重合并得分，取 top_k
-
-      2. 稀疏检索：name_sparse + meaning_sparse 各取 top_k*3，
-
-         按 0.5/0.5 权重合并得分，取 top_k
-
-      3. 两路 top_k 合并，按 standard_id 去重
-
-
+      1. 稠密检索：name_dense + meaning_dense 各取 top_k*5，
+         按 DENSE_NAME_WEIGHT 权重合并得分，取 top_k（语义主路，名称加权）
+      2. 稀疏检索（补充召回）：名称 BM25 取 top_k、含义 BM25 取 top_k，两路独立，
+         用于召回稠密路漏掉的字面强匹配标准
+      3. 三路 top_k 并集，按 standard_id 去重（稠密优先，稀疏补充漏检项）
 
     Args:
-
         query_name: 查询字段中文名
-
         query_meaning: 查询业务含义
-
         top_k: 每路返回数量（默认 10）
 
-
-
     Returns:
-
         合并去重后的结果列表，每条含:
-
         standard_id, name_text, meaning_text,
-
-        dense_score, sparse_score, source("dense"/"sparse"/"both")
-
+        dense_score, sparse_score,
+        source("dense"/"name_sparse"/"meaning_sparse"/"sparse_both"/"both")
     """
 
     if collection_name is None:
@@ -506,7 +490,10 @@ def search(query_name, query_meaning, top_k=10, field_type=None, collection_name
 
     output_fields = ["standard_id", "name_text", "meaning_text"]
 
-    sub_limit = top_k * 3
+    # 稠密子检索窗口：取 top_k 的 5 倍，含义子分按权重参与合并
+    dense_sub_limit = max(top_k * 5, 50)
+    # 稀疏(BM25)子检索窗口：名称/含义各取 top_k，3 倍窗口足够覆盖
+    sparse_sub_limit = top_k * 3
 
     # --- 1. 稠密检索 ---
 
@@ -518,7 +505,7 @@ def search(query_name, query_meaning, top_k=10, field_type=None, collection_name
         collection_name=collection_name,
         data=[name_vec],
         anns_field="name_dense",
-        limit=sub_limit,
+        limit=dense_sub_limit,
         output_fields=output_fields,
     )
 
@@ -526,43 +513,37 @@ def search(query_name, query_meaning, top_k=10, field_type=None, collection_name
         collection_name=collection_name,
         data=[meaning_vec],
         anns_field="meaning_dense",
-        limit=sub_limit,
+        limit=dense_sub_limit,
         output_fields=output_fields,
     )
 
     dense_map = {}
-
     for hit in name_dense_res[0]:
         sid = hit["standard_id"]
-
         dense_map[sid] = {
             "name_text": hit["entity"]["name_text"],
             "meaning_text": hit["entity"]["meaning_text"],
-            "score": 0.5 * hit["distance"],
+            "score": DENSE_NAME_WEIGHT * hit["distance"],
         }
-
     for hit in meaning_dense_res[0]:
         sid = hit["standard_id"]
-
         if sid in dense_map:
-            dense_map[sid]["score"] += 0.5 * hit["distance"]
-
+            dense_map[sid]["score"] += (1.0 - DENSE_NAME_WEIGHT) * hit["distance"]
         else:
             dense_map[sid] = {
                 "name_text": hit["entity"]["name_text"],
                 "meaning_text": hit["entity"]["meaning_text"],
-                "score": 0.5 * hit["distance"],
+                "score": (1.0 - DENSE_NAME_WEIGHT) * hit["distance"],
             }
 
     dense_top = sorted(dense_map.items(), key=lambda x: -x[1]["score"])[:top_k]
 
-    # --- 2. 稀疏检索 (BM25) ---
-
+    # --- 2. 稀疏检索 (BM25)：名称/含义两路各取 top_k，作为稠密路的补充召回 ---
     name_sparse_res = client.search(
         collection_name=collection_name,
         data=[query_name],
         anns_field="name_sparse",
-        limit=sub_limit,
+        limit=sparse_sub_limit,
         output_fields=output_fields,
     )
 
@@ -570,38 +551,21 @@ def search(query_name, query_meaning, top_k=10, field_type=None, collection_name
         collection_name=collection_name,
         data=[query_meaning],
         anns_field="meaning_sparse",
-        limit=sub_limit,
+        limit=sparse_sub_limit,
         output_fields=output_fields,
     )
 
-    sparse_map = {}
+    # 名称路 top_k 与 含义路 top_k 各自独立（不再加权合并）
+    name_sparse_top = [
+        (h["standard_id"], h["distance"], h["entity"])
+        for h in name_sparse_res[0][:top_k]
+    ]
+    meaning_sparse_top = [
+        (h["standard_id"], h["distance"], h["entity"])
+        for h in meaning_sparse_res[0][:top_k]
+    ]
 
-    for hit in name_sparse_res[0]:
-        sid = hit["standard_id"]
-
-        sparse_map[sid] = {
-            "name_text": hit["entity"]["name_text"],
-            "meaning_text": hit["entity"]["meaning_text"],
-            "score": 0.5 * hit["distance"],
-        }
-
-    for hit in meaning_sparse_res[0]:
-        sid = hit["standard_id"]
-
-        if sid in sparse_map:
-            sparse_map[sid]["score"] += 0.5 * hit["distance"]
-
-        else:
-            sparse_map[sid] = {
-                "name_text": hit["entity"]["name_text"],
-                "meaning_text": hit["entity"]["meaning_text"],
-                "score": 0.5 * hit["distance"],
-            }
-
-    sparse_top = sorted(sparse_map.items(), key=lambda x: -x[1]["score"])[:top_k]
-
-    # --- 3. 合并去重 ---
-
+    # --- 3. 三路并集去重：稠密优先，稀疏名称/含义补充漏检项 ---
     results = {}
 
     for sid, info in dense_top:
@@ -614,20 +578,39 @@ def search(query_name, query_meaning, top_k=10, field_type=None, collection_name
             "source": "dense",
         }
 
-    for sid, info in sparse_top:
+    for sid, score, entity in name_sparse_top:
         if sid in results:
-            results[sid]["sparse_score"] = round(info["score"], 4)
-
-            results[sid]["source"] = "both"
-
+            results[sid]["sparse_score"] += round(score, 4)
+            if results[sid]["source"] == "dense":
+                results[sid]["source"] = "both"
+            else:
+                results[sid]["source"] = "sparse_both"
         else:
             results[sid] = {
                 "standard_id": sid,
-                "name_text": info["name_text"],
-                "meaning_text": info["meaning_text"],
+                "name_text": entity["name_text"],
+                "meaning_text": entity["meaning_text"],
                 "dense_score": 0.0,
-                "sparse_score": round(info["score"], 4),
-                "source": "sparse",
+                "sparse_score": round(score, 4),
+                "source": "name_sparse",
+            }
+
+    for sid, score, entity in meaning_sparse_top:
+        if sid in results:
+            results[sid]["sparse_score"] += round(score, 4)
+            cur = results[sid]["source"]
+            if cur == "dense":
+                results[sid]["source"] = "both"
+            elif cur == "name_sparse":
+                results[sid]["source"] = "sparse_both"
+        else:
+            results[sid] = {
+                "standard_id": sid,
+                "name_text": entity["name_text"],
+                "meaning_text": entity["meaning_text"],
+                "dense_score": 0.0,
+                "sparse_score": round(score, 4),
+                "source": "meaning_sparse",
             }
 
     return list(results.values())

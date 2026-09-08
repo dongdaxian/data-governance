@@ -124,6 +124,7 @@ def normalize_enum_values(
                 "row_index": item.row_index,
                 "normalized": item.normalized,
                 "needs_normalization": item.needs_normalization,
+                "has_codes": item.has_codes,
             })
 
     return all_results
