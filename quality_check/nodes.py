@@ -404,7 +404,7 @@ def combine_results_node(state: GraphState) -> dict:
 def check_field_type_node(state: GraphState) -> dict:
     """调用 LLM 检查"字段所属类型"是否填写正确（软性提醒）。
 
-    仅对检查结果已通过的记录执行（业务定义非空），
+    仅对检查结果已通过的记录执行（业务定义非空且非代码枚举类），
     结果写入"所属类型检查结果"列，不影响"检查结果"列判定。
     """
     print("\n=== 步骤 5b/6: LLM 字段所属类型检查（软性提醒）===")
@@ -418,11 +418,13 @@ def check_field_type_node(state: GraphState) -> dict:
             "字段所属类型": r["field_type"],
         }
         for r in rows
-        if r["check_result"] == "通过" and r["business_meaning"]
+        if r["check_result"] == "通过"
+        and r["business_meaning"]
+        and r["field_type"] != "代码枚举类"
     ]
 
     if not rows_to_check:
-        print("  没有需要检查的行（检查结果通过且业务定义非空）")
+        print("  没有需要检查的行（检查结果通过、业务定义非空且非代码枚举类）")
         return {"type_check_results": []}
 
     print(f"  共 {len(rows_to_check)} 行需要检查字段所属类型")

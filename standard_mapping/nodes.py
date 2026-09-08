@@ -23,7 +23,6 @@ from common.vector_store import search as vector_search, translate_milvus_error
 from common.exceptions import NonRetryableError
 from common.dictionary_store import (
     get_by_ids as get_standards_by_ids,
-    get_by_name as get_standards_by_name,
 )
 
 
@@ -37,7 +36,6 @@ def fetch_candidates(field_name: str, business_meaning: str, field_type: str) ->
     流程:
       1. 调用向量检索（稠密 top10 + 稀疏 top10 -> 合并去重）
       2. 根据返回的标准编号，从存量字典补全完整信息
-      3. 精确同名保底：字典中存在与字段名完全一致的标准时并入候选（置顶）
 
     Args:
         field_name: 字段中文名
@@ -57,7 +55,7 @@ def fetch_candidates(field_name: str, business_meaning: str, field_type: str) ->
     )
 
     if not search_results:
-        return _ensure_exact_name_match([], field_name, field_type)
+        return []
 
     # 2. 从存量字典补全完整信息（附检索得分，供测试输出明细）
     std_ids = [r["standard_id"] for r in search_results]
@@ -80,35 +78,7 @@ def fetch_candidates(field_name: str, business_meaning: str, field_type: str) ->
             sparse_score=score.get("sparse_score", 0.0),
             source=score.get("source", ""),
         ))
-    return _ensure_exact_name_match(candidates, field_name, field_type)
-
-
-def _ensure_exact_name_match(candidates, field_name, field_type) -> list[CandidateStandard]:
-    """精确同名保底：同类型字典中存在与字段名完全一致的标准时并入候选。
-
-    仅当精确同名标准未出现在检索候选里时生效，避免与检索结果重复。
-    """
-    name = field_name.strip()
-    if any(c["std_name"].strip() == name for c in candidates):
-        return candidates
-
-    exact = get_standards_by_name(name, field_type)
-    if not exact:
-        return candidates
-
-    return [CandidateStandard(
-        std_id=r["std_id"],
-        std_name=r["std_name"],
-        std_type=r["std_type"],
-        business_definition=r["business_definition"],
-        domain_id=r["domain_id"],
-        domain_name=r["domain_name"],
-        domain_type=r["domain_type"],
-        data_example=r["data_example"],
-        dense_score=0.0,
-        sparse_score=0.0,
-        source="exact",
-    ) for r in exact] + candidates
+    return candidates
 
 
 # ============================================================
