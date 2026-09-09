@@ -17,7 +17,8 @@
           |
   combine_results -- 汇总所有检查结果，判定通过/不通过
           |
-  check_field_type -- LLM 字段所属类型软性提醒（仅已通过行，不影响检查结果列）
+  soft_check     -- 软性检查：字段所属类型/枚举值唯一性/枚举值反义词
+                    （仅已通过行，不影响检查结果列）
           |
   write_excel     -- 输出结果 Excel
           |
@@ -31,12 +32,13 @@ from quality_check.llm import (
     check_business_meaning,
     normalize_enum_values,
     check_field_types,
+    check_enum_antonyms,
 )
 from quality_check.constants import (
     VALID_FIELD_TYPES,
     DOMAIN_WHITELIST,
 )
-from common.domain_rules import parse_domain_type, check_data_example
+from common.domain_rules import parse_domain_type, check_data_example, RE_CHINESE
 
 
 # ============================================================
@@ -55,13 +57,13 @@ def load_excel_node(state: GraphState) -> dict:
 # ============================================================
 
 def check_rules_node(state: GraphState) -> dict:
-    """规则检查：非空 + 类型合法 + 枚举一致 + 域类型匹配 + 数据示例 + 重复。
+    """规则检查：非空 + 中文名含中文字符 + 类型合法 + 枚举一致 + 域类型匹配 + 数据示例 + 重复。
 
     检查间逻辑依赖：
       非空 -> 类型合法 -> 枚举一致 / 域类型匹配 -> 数据示例
       重复 在所有行检查完后批量执行
     """
-    print("\n=== 步骤 2/6: 规则检查（非空+类型+枚举+域类型+数据示例+重复）===")
+    print("\n=== 步骤 2/6: 规则检查（非空+中文名+类型+枚举+域类型+数据示例+重复）===")
     rows = state["rows"]
 
     # --- 预处理：内容仅为"无"的字段视为未填写，替换为空（中文表名除外） ---
@@ -94,6 +96,10 @@ def check_rules_node(state: GraphState) -> dict:
         if empty_fields:
             issues.append(f"必填字段为空: {', '.join(empty_fields)}")
 
+        # 字段中文名必须包含至少一个中文字符
+        if row["field_name"] and not RE_CHINESE.search(str(row["field_name"]).strip()):
+            issues.append(f"字段中文名'{row['field_name']}'必须包含至少一个中文字符")
+
         # 字段所属类型合法性（类型为空时跳过）
         type_valid = False
         if row["field_type"] and row["field_type"].strip():
@@ -107,16 +113,17 @@ def check_rules_node(state: GraphState) -> dict:
 
         # 是否枚举一致性 + 枚举值联动（依赖类型合法）
         if type_valid and row["is_enum"] and row["is_enum"].strip():
-            is_code_enum = row["field_type"] == "代码枚举类"
+            # 代码枚举类、标志类必须填"是"并携带枚举值
+            is_enum_required = row["field_type"] in ("代码枚举类", "标志类")
             is_enum_val = row["is_enum"].strip()
 
             if is_enum_val not in ("是", "否"):
                 issues.append(f"'是否枚举'填写为'{is_enum_val}'，必须为'是'或'否'")
             else:
-                if is_code_enum and is_enum_val != "是":
-                    issues.append(f"代码枚举类字段的'是否枚举'必须为'是'，实际为'{is_enum_val}'")
-                elif not is_code_enum and is_enum_val != "否":
-                    issues.append(f"非代码枚举类字段的'是否枚举'必须为'否'，实际为'{is_enum_val}'")
+                if is_enum_required and is_enum_val != "是":
+                    issues.append(f"{row['field_type']}字段的'是否枚举'必须为'是'，实际为'{is_enum_val}'")
+                elif not is_enum_required and is_enum_val != "否":
+                    issues.append(f"非代码枚举类/标志类字段的'是否枚举'必须为'否'，实际为'{is_enum_val}'")
 
             # 枚举值联动
             has_enum_values = bool(row["enum_values"] and row["enum_values"].strip())
@@ -125,16 +132,15 @@ def check_rules_node(state: GraphState) -> dict:
             elif is_enum_val == "否" and has_enum_values:
                 issues.append("'是否枚举'为'否'但枚举值不为空")
 
-        # 域类型与字段所属类型匹配（类型不合法或代码枚举类直接跳过）
+        # 域类型与字段所属类型匹配（类型不合法或枚举类/标志类直接跳过）
         domain_key = None
-        domain_match = None
         if (
             type_valid
-            and row["field_type"] != "代码枚举类"
+            and row["field_type"] not in ("代码枚举类", "标志类")
             and row["domain_type"]
             and row["domain_type"].strip()
         ):
-            domain_key, domain_match = parse_domain_type(row["domain_type"])
+            domain_key, _ = parse_domain_type(row["domain_type"])
             if domain_key is None:
                 issues.append(f"域类型'{row['domain_type']}'格式不合法")
             else:
@@ -143,17 +149,11 @@ def check_rules_node(state: GraphState) -> dict:
                     issues.append(
                         f"域类型'{row['domain_type']}'不允许用于字段所属类型'{row['field_type']}'"
                     )
-                elif row["field_type"] == "标志类":
-                    # 标志类特殊校验：仅允许 n!(1) 或 n..(1)
-                    if domain_match.group(1) != "1":
-                        issues.append(
-                            f"标志类字段的域类型必须为n!(1)或n..(1)，实际为'{row['domain_type']}'"
-                        )
 
-        # 域类型与数据示例相符（类型不合法或代码枚举类直接跳过）
+        # 域类型与数据示例相符（类型不合法或枚举类/标志类直接跳过）
         if (
             type_valid
-            and row["field_type"] != "代码枚举类"
+            and row["field_type"] not in ("代码枚举类", "标志类")
             and domain_key is not None
             and row["data_example"]
             and row["data_example"].strip()
@@ -398,16 +398,26 @@ def combine_results_node(state: GraphState) -> dict:
 
 
 # ============================================================
-# 节点 5b: 字段所属类型检查（汇总后执行，软性提醒）
+# 节点 5b: 软性检查（字段所属类型 + 枚举值唯一性 + 枚举值反义词，汇总后执行）
 # ============================================================
 
-def check_field_type_node(state: GraphState) -> dict:
-    """调用 LLM 检查"字段所属类型"是否填写正确（软性提醒）。
+def _enum_item_count(enum_values) -> int:
+    """统计枚举值拆分的项数（规范化格式以分号分隔）。"""
+    if not enum_values:
+        return 0
+    return len([p for p in str(enum_values).split(";") if p.strip()])
 
-    仅对检查结果已通过的记录执行（业务定义非空且非代码枚举类），
-    结果写入"所属类型检查结果"列，不影响"检查结果"列判定。
+
+def soft_check_node(state: GraphState) -> dict:
+    """LLM 检查"字段所属类型"、提示枚举值仅一项及两项反义词（软性提醒）。
+
+    仅对检查结果已通过的记录执行：
+      - 字段所属类型检查：业务定义非空且非代码枚举类
+      - 枚举值唯一性提示：枚举值拆分后仅有一项（不依赖 LLM）
+      - 枚举值反义词提示：代码枚举类枚举值两项且为反义词（LLM 判断）
+    结果写入"软性检查结果"列，不影响"检查结果"列判定。
     """
-    print("\n=== 步骤 5b/6: LLM 字段所属类型检查（软性提醒）===")
+    print("\n=== 步骤 5b/6: 软性检查（字段所属类型 + 枚举值唯一性 + 反义词）===")
     rows = state["rows"]
 
     rows_to_check = [
@@ -423,32 +433,73 @@ def check_field_type_node(state: GraphState) -> dict:
         and r["field_type"] != "代码枚举类"
     ]
 
-    if not rows_to_check:
-        print("  没有需要检查的行（检查结果通过、业务定义非空且非代码枚举类）")
-        return {"type_check_results": []}
+    # 代码枚举类枚举值两项反义词提示（软性提醒，仅已通过行，LLM 判断）
+    antonym_rows = [
+        {
+            "row_index": r["index"],
+            "字段中文名": r["field_name"],
+            "枚举值": r["normalized_enum"] or r["enum_values"],
+        }
+        for r in rows
+        if r["check_result"] == "通过"
+        and r["field_type"] == "代码枚举类"
+        and _enum_item_count(r["normalized_enum"] or r["enum_values"]) == 2
+    ]
 
-    print(f"  共 {len(rows_to_check)} 行需要检查字段所属类型")
+    print(f"  共 {len(rows_to_check)} 行需要检查字段所属类型，"
+          f"{len(antonym_rows)} 行需要检查枚举值反义词")
     try:
-        llm = get_llm()
-        results = check_field_types(llm, rows_to_check)
-        result_map = {r["row_index"]: r for r in results}
+        results = []
+        result_map = {}
+        if rows_to_check:
+            llm = get_llm()
+            results = check_field_types(llm, rows_to_check)
+            result_map = {r["row_index"]: r for r in results}
+
+        antonym_map = {}
+        if antonym_rows:
+            llm = get_llm()
+            antonym_map = {
+                r["row_index"]: r for r in check_enum_antonyms(llm, antonym_rows)
+            }
+
         for row in rows:
+            notes = []
             r = result_map.get(row["index"])
-            if r is None:
-                continue
-            if r["is_correct"]:
-                row["type_check_result"] = ""
-            else:
-                row["type_check_result"] = (
+            if r is not None and not r["is_correct"]:
+                notes.append(
                     f"因为{r['reason']}，当前字段所属类型可能错误，"
                     f"应为{r['correct_type']}，请联系业务确认"
                 )
-        print(f"  字段所属类型检查完成，共 {len(results)} 条结果")
-        return {"type_check_results": results}
+            # 枚举值仅有一项提示（软性提醒，仅已通过行，不依赖 LLM）
+            # 优先用规范化后的枚举值，无规范化结果时回退原始枚举值
+            enum_vals = row["normalized_enum"] or row["enum_values"]
+            if (
+                row["check_result"] == "通过"
+                and _enum_item_count(enum_vals) == 1
+            ):
+                notes.append(
+                    f"枚举值仅有一个取值'{enum_vals}'，"
+                    f"请确认该字段是否为枚举类型或需补充其他枚举值"
+                )
+            # 枚举值两项反义词提示（软性提醒，仅已通过行，LLM 判断）
+            ar = antonym_map.get(row["index"])
+            if ar is not None and ar["is_antonym"]:
+                notes.append(
+                    f"枚举值两项（{enum_vals}）为反义词，"
+                    f"该字段可能应为标志类而非代码枚举类，请联系业务确认"
+                )
+            row["soft_check_result"] = "\n".join(
+                f"{i}. {n}" for i, n in enumerate(notes, 1)
+            )
+
+        print(f"  软性检查完成：字段所属类型 {len(results)} 条结果，"
+              f"枚举值反义词 {len(antonym_map)} 条结果")
+        return {"soft_check_results": results}
     except Exception as e:
         print(f"  [WARNING] LLM 字段所属类型检查失败: {e}")
         print(f"  跳过所属类型检查，仅输出规则检查结果")
-        return {"type_check_results": []}
+        return {"soft_check_results": []}
 
 
 # ============================================================

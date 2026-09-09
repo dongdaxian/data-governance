@@ -166,9 +166,9 @@ def main():
                  example="编码", ftype="编码类", is_enum="是",
                  enum_vals="01：人民币 02：美元 03：欧元",
                  meaning="标识交易使用的货币类型代码，遵循ISO 4217标准"),
-        # 故意造错：a..(2) 不允许用于标志类 + 是否枚举应为否但填了枚举值
+        # 应通过：标志类豁免域类型/数据示例检查，"是否枚举"必须为"是"并填枚举值
         make_row(table="客户信息明细表", field="是否冻结", domain="a..(2)",
-                 example="Y", ftype="标志类", is_enum="否",
+                 example="Y", ftype="标志类", is_enum="是",
                  enum_vals="Y-是;N-否",
                  meaning="标识账户是否被冻结，冻结后无法进行交易操作"),
         # 故意造错：域类型缺失

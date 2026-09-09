@@ -34,8 +34,8 @@ class RowData(TypedDict):
     check_result: str         # "通过" / "不通过"
     fail_reason: str          # 不通过原因汇总
 
-    # check_field_type 节点产出
-    type_check_result: str    # 所属类型检查结果（软性提醒，判断错误时非空）
+    # soft_check 节点产出
+    soft_check_result: str    # 软性检查结果（字段所属类型/枚举值唯一性提示，有提示时非空）
 
 
 class GraphState(TypedDict):
@@ -45,7 +45,7 @@ class GraphState(TypedDict):
     output_file: str
     semantic_results: list[dict]
     enum_results: list[dict]
-    type_check_results: list[dict]
+    soft_check_results: list[dict]
 
 
 # ============================================================
@@ -91,3 +91,15 @@ class FieldTypeCheckItem(BaseModel):
 class FieldTypeCheckResult(BaseModel):
     """批量字段所属类型检查结果。"""
     results: list[FieldTypeCheckItem] = Field(description="每行的检查结果列表")
+
+
+class EnumAntonymItem(BaseModel):
+    """单行代码枚举类枚举值反义词判断结果。"""
+    row_index: int = Field(description="行号，与输入数据中的row_index对应")
+    is_antonym: bool = Field(description="枚举值的两项码值是否为反义词。true=反义词，false=不是")
+    reason: str = Field(description="判断过程和原因说明，需详细描述比较分析的过程")
+
+
+class EnumAntonymResult(BaseModel):
+    """批量枚举值反义词判断结果。"""
+    results: list[EnumAntonymItem] = Field(description="每行的判断结果列表")

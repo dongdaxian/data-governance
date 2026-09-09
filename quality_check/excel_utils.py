@@ -9,7 +9,7 @@
 写入：在原始数据基础上填写检查结果，输出新 Excel。
 
   枚举值规范化结果直接覆盖"枚举值(选填)"列；另填"检查结果"、"说明"两列，
-  并在末尾追加"所属类型检查结果"列（LLM 软性提醒）。
+  并在末尾追加"软性检查结果"列（字段所属类型/枚举值唯一性软性提醒）。
 
 """
 
@@ -24,7 +24,7 @@ from quality_check.constants import (
 
     COL_FAIL_REASON,
 
-    COL_TYPE_CHECK_RESULT,
+    COL_SOFT_CHECK_RESULT,
 
 )
 
@@ -156,7 +156,7 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
 
     枚举值列直接写入规范化后的枚举值（无规范化结果时保留原值）；
 
-    末尾追加"所属类型检查结果"列，写入字段所属类型软性提醒。
+    末尾追加"软性检查结果"列，写入字段所属类型/枚举值唯一性软性提醒。
 
     """
 
@@ -197,9 +197,9 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
         ws.cell(row=excel_row, column=col_index[COL_CHECK_RESULT], value=r["check_result"])
         ws.cell(row=excel_row, column=col_index[COL_FAIL_REASON], value=r["fail_reason"])
 
-    # 4. 追加"所属类型检查结果"列（软性提醒，位于最后一个结果列之后）
+    # 4. 追加"软性检查结果"列（字段所属类型/枚举值唯一性提醒，位于最后一个结果列之后）
     type_col = ws.max_column + 1
-    ws.cell(row=2, column=type_col, value=COL_TYPE_CHECK_RESULT)
+    ws.cell(row=2, column=type_col, value=COL_SOFT_CHECK_RESULT)
 
     # 若第1行存在覆盖原结果列的合并表头（如"数管反馈"），将其右边界扩展一列，
     # 使新列并入该表头组；模板无此合并区时跳过
@@ -217,7 +217,7 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
         excel_row = 3 + r["index"]
         ws.cell(
             row=excel_row, column=type_col,
-            value=r.get("type_check_result", ""),
+            value=r.get("soft_check_result", ""),
         )
 
     wb.save(file_path)

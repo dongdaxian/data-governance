@@ -3,7 +3,9 @@
 包含业务含义检查和枚举值规范化的 LLM 调用逻辑。
 """
 
+import concurrent.futures
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 from config import BATCH_SIZE
 
@@ -14,6 +16,7 @@ from quality_check.state import (
     BusinessMeaningResult,
     EnumNormalizationResult,
     FieldTypeCheckResult,
+    EnumAntonymResult,
 )
 from quality_check.prompts import (
     BUSINESS_MEANING_SYSTEM,
@@ -22,7 +25,43 @@ from quality_check.prompts import (
     ENUM_NORMALIZATION_USER,
     FIELD_TYPE_CHECK_SYSTEM,
     FIELD_TYPE_CHECK_USER,
+    ENUM_ANTONYM_SYSTEM,
+    ENUM_ANTONYM_USER,
 )
+
+
+# 并发批次数：LLM 调用为 IO 密集，线程并发可显著提速（受 API 并发限制约束）
+LLM_CONCURRENCY = 4
+
+
+def _run_batches_parallel(fn, llm: ChatOpenAI, rows_data: list[dict], label: str):
+    """并发执行各批次 LLM 调用，按批次顺序返回 [(批次号, result), ...]。
+
+    Args:
+        fn: 单批次调用函数（接收 llm 和一批数据，返回结构化结果）
+        llm: LLM 实例
+        rows_data: 待处理数据行
+        label: 打印用标签（如"业务含义检查"）
+
+    Returns:
+        按批次号升序的 [(idx, result), ...]
+    """
+    batches = list(chunked(rows_data, BATCH_SIZE))
+    total = len(batches)
+
+    def worker(idx_batch):
+        idx, batch = idx_batch
+        print(f"  [{label}] 批次 {idx + 1}/{total}，处理 {len(batch)} 行...")
+        result = fn(llm, batch)
+        return idx, result
+
+    ordered = []
+    with ThreadPoolExecutor(max_workers=LLM_CONCURRENCY) as ex:
+        futures = [ex.submit(worker, (i, b)) for i, b in enumerate(batches)]
+        for fut in concurrent.futures.as_completed(futures):
+            ordered.append(fut.result())
+    ordered.sort(key=lambda x: x[0])
+    return ordered
 
 
 # ============================================================
@@ -51,7 +90,7 @@ def check_business_meaning(
     llm: ChatOpenAI,
     rows_data: list[dict],
 ) -> list[dict]:
-    """分批调用 LLM 检查业务含义，返回扁平结果列表。
+    """分批并发调用 LLM 检查业务含义，返回扁平结果列表。
 
     Args:
         llm: LLM 实例
@@ -61,12 +100,10 @@ def check_business_meaning(
         [{"row_index": 0, "is_meaningful": True, "reason": "..."}, ...]
     """
     all_results = []
-    total = len(rows_data)
 
-    for i, batch in enumerate(chunked(rows_data, BATCH_SIZE)):
-        print(f"  [业务含义检查] 批次 {i + 1}/{(total + BATCH_SIZE - 1) // BATCH_SIZE}，"
-              f"处理 {len(batch)} 行...")
-        result = check_business_meaning_batch(llm, batch)
+    for _, result in _run_batches_parallel(
+        check_business_meaning_batch, llm, rows_data, "业务含义检查"
+    ):
         for item in result.results:
             all_results.append({
                 "row_index": item.row_index,
@@ -103,7 +140,7 @@ def normalize_enum_values(
     llm: ChatOpenAI,
     rows_data: list[dict],
 ) -> list[dict]:
-    """分批调用 LLM 规范化枚举值，返回扁平结果列表。
+    """分批并发调用 LLM 规范化枚举值，返回扁平结果列表。
 
     Args:
         llm: LLM 实例
@@ -113,12 +150,10 @@ def normalize_enum_values(
         [{"row_index": 0, "normalized": "...", "needs_normalization": True}, ...]
     """
     all_results = []
-    total = len(rows_data)
 
-    for i, batch in enumerate(chunked(rows_data, BATCH_SIZE)):
-        print(f"  [枚举值规范化] 批次 {i + 1}/{(total + BATCH_SIZE - 1) // BATCH_SIZE}，"
-              f"处理 {len(batch)} 行...")
-        result = normalize_enum_batch(llm, batch)
+    for _, result in _run_batches_parallel(
+        normalize_enum_batch, llm, rows_data, "枚举值规范化"
+    ):
         for item in result.results:
             all_results.append({
                 "row_index": item.row_index,
@@ -156,7 +191,7 @@ def check_field_types(
     llm: ChatOpenAI,
     rows_data: list[dict],
 ) -> list[dict]:
-    """分批调用 LLM 检查字段所属类型，返回扁平结果列表。
+    """分批并发调用 LLM 检查字段所属类型，返回扁平结果列表。
 
     Args:
         llm: LLM 实例
@@ -166,17 +201,65 @@ def check_field_types(
         [{"row_index": 0, "is_correct": True, "correct_type": "", "reason": "..."}, ...]
     """
     all_results = []
-    total = len(rows_data)
 
-    for i, batch in enumerate(chunked(rows_data, BATCH_SIZE)):
-        print(f"  [所属类型检查] 批次 {i + 1}/{(total + BATCH_SIZE - 1) // BATCH_SIZE}，"
-              f"处理 {len(batch)} 行...")
-        result = check_field_type_batch(llm, batch)
+    for _, result in _run_batches_parallel(
+        check_field_type_batch, llm, rows_data, "所属类型检查"
+    ):
         for item in result.results:
             all_results.append({
                 "row_index": item.row_index,
                 "is_correct": item.is_correct,
                 "correct_type": item.correct_type,
+                "reason": item.reason,
+            })
+
+    return all_results
+
+
+# ============================================================
+# 枚举值反义词判断
+# ============================================================
+
+def check_enum_antonym_batch(
+    llm: ChatOpenAI,
+    rows: list[dict],
+) -> EnumAntonymResult:
+    """调用 LLM 批量判断枚举值两项码值是否反义词。
+
+    Args:
+        llm: LLM 实例
+        rows: [{"row_index": 0, "字段中文名": "...", "枚举值": "01-通过;02-不通过"}, ...]
+
+    Returns:
+        EnumAntonymResult
+    """
+    data_str = json.dumps(rows, ensure_ascii=False, indent=2)
+    user_text = ENUM_ANTONYM_USER.format(data=data_str)
+    return call_with_retry(llm, EnumAntonymResult, ENUM_ANTONYM_SYSTEM, user_text)
+
+
+def check_enum_antonyms(
+    llm: ChatOpenAI,
+    rows_data: list[dict],
+) -> list[dict]:
+    """并发分批调用 LLM 判断枚举值反义词，返回扁平结果列表。
+
+    Args:
+        llm: LLM 实例
+        rows_data: [{"row_index": 0, "字段中文名": "...", "枚举值": "..."}, ...]
+
+    Returns:
+        [{"row_index": 0, "is_antonym": True, "reason": "..."}, ...]
+    """
+    all_results = []
+
+    for _, result in _run_batches_parallel(
+        check_enum_antonym_batch, llm, rows_data, "枚举反义词检查"
+    ):
+        for item in result.results:
+            all_results.append({
+                "row_index": item.row_index,
+                "is_antonym": item.is_antonym,
                 "reason": item.reason,
             })
 
