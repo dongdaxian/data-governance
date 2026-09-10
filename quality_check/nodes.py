@@ -448,6 +448,8 @@ def soft_check_node(state: GraphState) -> dict:
 
     print(f"  共 {len(rows_to_check)} 行需要检查字段所属类型，"
           f"{len(antonym_rows)} 行需要检查枚举值反义词")
+    type_sent_indices = {r["row_index"] for r in rows_to_check}
+    antonym_sent_indices = {r["row_index"] for r in antonym_rows}
     try:
         results = []
         result_map = {}
@@ -466,6 +468,8 @@ def soft_check_node(state: GraphState) -> dict:
         for row in rows:
             notes = []
             r = result_map.get(row["index"])
+            if r is None and row["index"] in type_sent_indices:
+                notes.append("LLM未返回该行结果，字段所属类型检查需人工复核")
             if r is not None and not r["is_correct"]:
                 notes.append(
                     f"因为{r['reason']}，当前字段所属类型可能错误，"
@@ -484,6 +488,8 @@ def soft_check_node(state: GraphState) -> dict:
                 )
             # 枚举值两项反义词提示（软性提醒，仅已通过行，LLM 判断）
             ar = antonym_map.get(row["index"])
+            if ar is None and row["index"] in antonym_sent_indices:
+                notes.append("LLM未返回该行结果，枚举值反义词检查需人工复核")
             if ar is not None and ar["is_antonym"]:
                 notes.append(
                     f"枚举值两项（{enum_vals}）为反义词，"
@@ -497,8 +503,13 @@ def soft_check_node(state: GraphState) -> dict:
               f"枚举值反义词 {len(antonym_map)} 条结果")
         return {"soft_check_results": results}
     except Exception as e:
-        print(f"  [WARNING] LLM 字段所属类型检查失败: {e}")
-        print(f"  跳过所属类型检查，仅输出规则检查结果")
+        print(f"  [WARNING] LLM 软性检查失败: {e}")
+        print("  跳过软性检查，仅输出规则检查结果")
+        for row in rows:
+            if row["index"] in type_sent_indices:
+                row["soft_check_result"] = "LLM软性检查未执行，字段所属类型需人工复核"
+            elif row["index"] in antonym_sent_indices:
+                row["soft_check_result"] = "LLM软性检查未执行，枚举值反义词需人工复核"
         return {"soft_check_results": []}
 
 
