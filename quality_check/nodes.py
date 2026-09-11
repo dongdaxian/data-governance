@@ -408,6 +408,18 @@ def _enum_item_count(enum_values) -> int:
     return len([p for p in str(enum_values).split(";") if p.strip()])
 
 
+def _build_result_map(results) -> tuple[dict, set]:
+    """按 row_index 建立 LLM 结果索引，并识别重复返回的行号。"""
+    result_map = {}
+    duplicate_indices = set()
+    for result in results:
+        row_index = result["row_index"]
+        if row_index in result_map:
+            duplicate_indices.add(row_index)
+        result_map[row_index] = result
+    return result_map, duplicate_indices
+
+
 def soft_check_node(state: GraphState) -> dict:
     """LLM 检查"字段所属类型"、提示枚举值仅一项及两项反义词（软性提醒）。
 
@@ -450,27 +462,31 @@ def soft_check_node(state: GraphState) -> dict:
           f"{len(antonym_rows)} 行需要检查枚举值反义词")
     type_sent_indices = {r["row_index"] for r in rows_to_check}
     antonym_sent_indices = {r["row_index"] for r in antonym_rows}
+    duplicate_type_indices = set()
+    duplicate_antonym_indices = set()
     try:
         results = []
         result_map = {}
         if rows_to_check:
             llm = get_llm()
             results = check_field_types(llm, rows_to_check)
-            result_map = {r["row_index"]: r for r in results}
+            result_map, duplicate_type_indices = _build_result_map(results)
 
         antonym_map = {}
         if antonym_rows:
             llm = get_llm()
-            antonym_map = {
-                r["row_index"]: r for r in check_enum_antonyms(llm, antonym_rows)
-            }
+            antonym_map, duplicate_antonym_indices = _build_result_map(
+                check_enum_antonyms(llm, antonym_rows)
+            )
 
         for row in rows:
             notes = []
             r = result_map.get(row["index"])
-            if r is None and row["index"] in type_sent_indices:
+            if row["index"] in duplicate_type_indices:
+                notes.append("LLM返回重复结果，字段所属类型检查需人工复核")
+            elif r is None and row["index"] in type_sent_indices:
                 notes.append("LLM未返回该行结果，字段所属类型检查需人工复核")
-            if r is not None and not r["is_correct"]:
+            elif r is not None and not r["is_correct"]:
                 notes.append(
                     f"因为{r['reason']}，当前字段所属类型可能错误，"
                     f"应为{r['correct_type']}，请联系业务确认"
@@ -488,9 +504,11 @@ def soft_check_node(state: GraphState) -> dict:
                 )
             # 枚举值两项反义词提示（软性提醒，仅已通过行，LLM 判断）
             ar = antonym_map.get(row["index"])
-            if ar is None and row["index"] in antonym_sent_indices:
+            if row["index"] in duplicate_antonym_indices:
+                notes.append("LLM返回重复结果，枚举值反义词检查需人工复核")
+            elif ar is None and row["index"] in antonym_sent_indices:
                 notes.append("LLM未返回该行结果，枚举值反义词检查需人工复核")
-            if ar is not None and ar["is_antonym"]:
+            elif ar is not None and ar["is_antonym"]:
                 notes.append(
                     f"枚举值两项（{enum_vals}）为反义词，"
                     f"该字段可能应为标志类而非代码枚举类，请联系业务确认"
