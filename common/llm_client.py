@@ -99,3 +99,15 @@ def chunked(items: list, size: int):
     """将列表分块。"""
     for i in range(0, len(items), size):
         yield items[i : i + size]
+
+
+def build_row_result_map(results: list[dict]) -> tuple[dict, set]:
+    """按 row_index 建立 LLM 结果索引，并识别重复返回的行号。"""
+    result_map = {}
+    duplicate_indices = set()
+    for result in results:
+        row_index = result["row_index"]
+        if row_index in result_map:
+            duplicate_indices.add(row_index)
+        result_map[row_index] = result
+    return result_map, duplicate_indices

@@ -36,6 +36,7 @@ from config import (
 )
 from common.vector_store import get_client, ensure_loaded, translate_milvus_error
 from common.exceptions import NonRetryableError
+from common.llm_client import build_row_result_map
 from common.dictionary_store import _load as _load_dict_df
 
 _logger = logging.getLogger(__name__)
@@ -230,11 +231,15 @@ def select_result_node(state: EnumMappingGraphState) -> dict:
 
     # 应用 LLM 结果
     selection_results = []
-    result_map = {r["row_index"]: r for r in results}
+    result_map, duplicate_indices = build_row_result_map(results)
     sent_indices = {r["row_index"] for r in rows_to_select}
     missing_count = 0
     for row in rows:
         idx = row["index"]
+        if idx in duplicate_indices:
+            row["mapping_result"] = "LLM返回重复结果，需人工复核"
+            row["llm_reason"] = "LLM 调用成功但同一 row_index 返回多条结果，需人工复核"
+            continue
         if idx not in result_map:
             if idx in sent_indices:
                 row["mapping_result"] = "LLM未返回该行结果，需人工复核"

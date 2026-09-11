@@ -39,6 +39,7 @@ from quality_check.constants import (
     DOMAIN_WHITELIST,
 )
 from common.domain_rules import parse_domain_type, check_data_example, RE_CHINESE
+from common.llm_client import build_row_result_map
 
 
 # ============================================================
@@ -408,18 +409,6 @@ def _enum_item_count(enum_values) -> int:
     return len([p for p in str(enum_values).split(";") if p.strip()])
 
 
-def _build_result_map(results) -> tuple[dict, set]:
-    """按 row_index 建立 LLM 结果索引，并识别重复返回的行号。"""
-    result_map = {}
-    duplicate_indices = set()
-    for result in results:
-        row_index = result["row_index"]
-        if row_index in result_map:
-            duplicate_indices.add(row_index)
-        result_map[row_index] = result
-    return result_map, duplicate_indices
-
-
 def soft_check_node(state: GraphState) -> dict:
     """LLM 检查"字段所属类型"、提示枚举值仅一项及两项反义词（软性提醒）。
 
@@ -470,12 +459,12 @@ def soft_check_node(state: GraphState) -> dict:
         if rows_to_check:
             llm = get_llm()
             results = check_field_types(llm, rows_to_check)
-            result_map, duplicate_type_indices = _build_result_map(results)
+            result_map, duplicate_type_indices = build_row_result_map(results)
 
         antonym_map = {}
         if antonym_rows:
             llm = get_llm()
-            antonym_map, duplicate_antonym_indices = _build_result_map(
+            antonym_map, duplicate_antonym_indices = build_row_result_map(
                 check_enum_antonyms(llm, antonym_rows)
             )
 
