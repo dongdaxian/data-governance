@@ -183,15 +183,6 @@ def top_n_with_ties(ranked: list[dict], top_n: int) -> list[dict]:
     return result
 
 
-# ============================================================
-# 域详情回填（域码值/字典清单/命中缺失冲突明细）
-# ============================================================
-
-def _dict_pairs(business_rule: str) -> list[tuple[str, str]]:
-    """解析字典"业务规则"列的枚举值定义：码-值;码-值;..."""
-    return parse_enum_values(business_rule)
-
-
 def build_item_details(pairs: list[tuple[str, str]], item_info: dict) -> dict:
     """构建一个枚举值项的候选明细：命中/缺失/码冲突。
 

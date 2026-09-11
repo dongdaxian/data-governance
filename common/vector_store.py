@@ -492,8 +492,8 @@ def search(query_name, query_meaning, top_k=10, field_type=None, collection_name
 
     # 稠密子检索窗口：取 top_k 的 5 倍，含义子分按权重参与合并
     dense_sub_limit = max(top_k * 5, 50)
-    # 稀疏(BM25)子检索窗口：名称/含义各取 top_k，3 倍窗口足够覆盖
-    sparse_sub_limit = top_k * 3
+    # 稀疏(BM25)子检索窗口：名称/含义各直接截取前 top_k 条，无需扩大
+    sparse_sub_limit = top_k
 
     # --- 1. 稠密检索 ---
 
