@@ -1,6 +1,6 @@
 """枚举落标处理 -- 常量定义。
 
-七分类结果体系与列名定义。
+五分类结果体系与列名定义。
 """
 
 # ============================================================
@@ -14,20 +14,25 @@ ENUM_FIELD_TYPE = "代码枚举类"
 ENUM_VALUE_COLUMN = "枚举值(选填)"
 
 # ============================================================
-# 七分类结果体系
+# 枚举代码操作
 # ============================================================
 
-RESULT_1 = "复用已有标准"
-RESULT_2 = "新增标准复用已有域"
-RESULT_3 = "新增域并新增标准"
-RESULT_4 = "补充域的枚举值后复用标准"
-RESULT_5 = "补充域的枚举值后新增标准"
-RESULT_6 = "名称接近枚举值冲突"
-RESULT_7 = "新增域复用字典"
+OP_REUSE = "复用"
+OP_MODIFY = "修改"
+
+# ============================================================
+# 五分类结果体系（第3步枚举代码操作 + 第4步标准操作 合并）
+# ============================================================
+
+RESULT_NEW = "新增枚举代码新增标准"
+RESULT_REUSE_REUSE = "复用枚举代码+复用已有标准"
+RESULT_REUSE_MODIFY = "复用枚举代码+修改已有标准"
+RESULT_MODIFY_REUSE = "修改枚举代码+复用已有标准"
+RESULT_MODIFY_MODIFY = "修改枚举代码+修改已有标准"
 
 ALL_RESULTS = [
-    RESULT_1, RESULT_2, RESULT_3, RESULT_4,
-    RESULT_5, RESULT_6, RESULT_7,
+    RESULT_NEW, RESULT_REUSE_REUSE, RESULT_REUSE_MODIFY,
+    RESULT_MODIFY_REUSE, RESULT_MODIFY_MODIFY,
 ]
 
 # ============================================================
@@ -48,7 +53,6 @@ INPUT_COLUMNS = {
 COL_MAPPING_RESULT = "落标结果"
 COL_SELECTED_STD_ID = "选中标准编号"
 COL_SELECTED_STD_NAME = "选中标准名称"
-COL_DOMAIN_ACTION = "域处理建议"
-COL_CONFLICT_DETAIL = "冲突详情"
+COL_ENUM_CODE_ACTION = "枚举代码处理建议"
 COL_LLM_REASON = "LLM判断过程"
 COL_CANDIDATES = "候选及得分"

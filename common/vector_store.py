@@ -376,12 +376,14 @@ def create_collection(client, collection_name=None):
         metric_type="BM25",
     )
 
+    # 先建集合：不传 index_params，避免 MilvusClient 自动 load 时使用默认副本数(2)，
+    # 导致单节点部署报 service resource insufficient；加载由 ensure_loaded 按副本数 1 完成
     client.create_collection(
         collection_name=collection_name,
         schema=schema,
-        index_params=index_params,
+        index_params=None,
     )
-
+    client.create_index(collection_name=collection_name, index_params=index_params)
     _logger.info("集合 %s 创建成功", collection_name)
 
 

@@ -2,7 +2,7 @@
 """Excel 读取/写入工具（枚举落标）。
 
 读取：解析质检输出格式 Excel，筛选代码枚举类字段。
-写入：完整复制输入文件，追加七分类结果列。
+写入：完整复制输入文件，追加结果列。
 """
 
 import shutil
@@ -16,8 +16,7 @@ from enum_standard_mapping.constants import (
     COL_MAPPING_RESULT,
     COL_SELECTED_STD_ID,
     COL_SELECTED_STD_NAME,
-    COL_DOMAIN_ACTION,
-    COL_CONFLICT_DETAIL,
+    COL_ENUM_CODE_ACTION,
     COL_LLM_REASON,
     COL_CANDIDATES,
 )
@@ -70,13 +69,11 @@ def read_excel(file_path: str) -> list[FieldToMap]:
             # 初始化结果字段
             pairs=[],
             candidates=[],
-            degraded_name_hits=[],
             candidate_fetch_error="",
             mapping_result="",
             selected_std_id="",
             selected_std_name="",
-            domain_action="",
-            conflict_detail="",
+            enum_code_suggestion="",
             llm_reason="",
         ))
 
@@ -86,14 +83,14 @@ def read_excel(file_path: str) -> list[FieldToMap]:
 
 
 def _format_candidates(candidates) -> str:
-    """将候选枚举值项格式化为明细文本（测试输出用）。"""
+    """将候选枚举代码格式化为明细文本（测试输出用）。"""
     if not candidates:
         return ""
     parts = []
     for c in candidates:
         parts.append(
-            f"{c['item_id']} {c['item_name']}({c['item_type']},得分{c['score']}/n,"
-            f"字典{'+'.join(s['std_id'] for s in c['standards'])})"
+            f"{c['item_id']} {c['item_name']}(得分{c['score']}/n,{c['operation']},"
+            f"标准{'+'.join(s['std_id'] for s in c['standards'])})"
         )
     return "; ".join(parts)
 
@@ -119,8 +116,7 @@ def write_excel(
         COL_MAPPING_RESULT,
         COL_SELECTED_STD_ID,
         COL_SELECTED_STD_NAME,
-        COL_DOMAIN_ACTION,
-        COL_CONFLICT_DETAIL,
+        COL_ENUM_CODE_ACTION,
         COL_LLM_REASON,
     ]
     if include_candidates:
@@ -148,11 +144,10 @@ def write_excel(
             ws.cell(row=excel_row, column=col_offset, value=r["mapping_result"])
             ws.cell(row=excel_row, column=col_offset + 1, value=r["selected_std_id"])
             ws.cell(row=excel_row, column=col_offset + 2, value=r["selected_std_name"])
-            ws.cell(row=excel_row, column=col_offset + 3, value=r["domain_action"])
-            ws.cell(row=excel_row, column=col_offset + 4, value=r["conflict_detail"])
-            ws.cell(row=excel_row, column=col_offset + 5, value=r["llm_reason"])
+            ws.cell(row=excel_row, column=col_offset + 3, value=r["enum_code_suggestion"])
+            ws.cell(row=excel_row, column=col_offset + 4, value=r["llm_reason"])
             if include_candidates:
-                ws.cell(row=excel_row, column=col_offset + 6, value=_format_candidates(r["candidates"]))
+                ws.cell(row=excel_row, column=col_offset + 5, value=_format_candidates(r["candidates"]))
         else:
             for i in range(len(result_cols)):
                 ws.cell(row=excel_row, column=col_offset + i, value="")
@@ -162,14 +157,14 @@ def write_excel(
 
     # 打印统计
     from enum_standard_mapping.constants import (
-        RESULT_1, RESULT_2, RESULT_3, RESULT_4,
-        RESULT_5, RESULT_6, RESULT_7,
+        RESULT_NEW, RESULT_REUSE_REUSE, RESULT_REUSE_MODIFY,
+        RESULT_MODIFY_REUSE, RESULT_MODIFY_MODIFY,
     )
     sorted_rows = sorted(rows, key=lambda r: r["index"])
     total = len(sorted_rows)
     stats = {
-        RESULT_1: 0, RESULT_2: 0, RESULT_3: 0, RESULT_4: 0,
-        RESULT_5: 0, RESULT_6: 0, RESULT_7: 0,
+        RESULT_NEW: 0, RESULT_REUSE_REUSE: 0, RESULT_REUSE_MODIFY: 0,
+        RESULT_MODIFY_REUSE: 0, RESULT_MODIFY_MODIFY: 0,
     }
     other = 0
     for r in sorted_rows:

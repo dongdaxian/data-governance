@@ -125,7 +125,7 @@ EMBED_DIMENSION = 1024
 
 EMBED_QUERY_INSTRUCTION = '为这个句子生成表示以用于检索相关文章：'
 # 向量化设备：cpu 或 cuda（有 GPU 时设为 cuda 可大幅加速）
-EMBED_DEVICE = os.getenv('EMBED_DEVICE', 'cpu')
+EMBED_DEVICE = os.getenv('EMBED_DEVICE', 'cuda')
 
 
 # 全量字典文件路径（用于候选标准信息回填）
@@ -142,13 +142,10 @@ ENUM_VALUE_COLLECTION = os.getenv('ENUM_VALUE_COLLECTION', 'dict_enum_values')
 # 码值相似度阈值：单条码值向量检索相似度 >= 该值计为"命中"
 ENUM_VALUE_MATCH_THRESHOLD = float(os.getenv('ENUM_VALUE_MATCH_THRESHOLD', '0.80'))
 
-# 候选枚举值项数量：得分排序取前 N（含并列）
-ENUM_CANDIDATE_TOP_N = int(os.getenv('ENUM_CANDIDATE_TOP_N', '20'))
+# 召回筛选后保留的枚举代码数量：得分排序取前 N
+ENUM_RECALL_TOP_N = int(os.getenv('ENUM_RECALL_TOP_N', '5'))
 
-# 每条码值检索返回条数（top_k，需覆盖同文本在多个枚举值项中的分布）
+# 每条码值检索返回条数（top_k，需覆盖同文本在多个枚举代码中的分布）
 ENUM_VALUE_SEARCH_TOP_K = int(os.getenv('ENUM_VALUE_SEARCH_TOP_K', '300'))
 
-# "大量重复"门槛：命中数/n >= 该值才触发补充类结果（4/5），如 0.67
-ENUM_HEAVY_OVERLAP_RATIO = float(os.getenv('ENUM_HEAVY_OVERLAP_RATIO', '0.667'))
-
-# 淘汰线：未命中数 >= ceil(n/2) 的枚举值项出局（代码内计算，无需配置）
+# 淘汰线：score < floor(n/2)+1 的枚举代码出局（代码内计算，无需配置）
