@@ -27,7 +27,7 @@ class RowData(TypedDict):
     # normalize_enum 节点产出
     normalized_enum: str      # 规范化后的枚举值（写 Excel 时覆盖原枚举值）
 
-    # check_flag 节点产出
+    # check_enum_type_consistency 节点产出
     flag_issues: list[str]    # 标志类误用问题列表（码值有且仅有"是"和"否"）
 
     # combine_results 节点产出
