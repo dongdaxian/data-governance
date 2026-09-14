@@ -12,13 +12,13 @@
     |
   check_semantic    -- LLM 检查业务含义
     |
-  check_flag     -- 标志类误用检查：仅此前检查无问题的代码枚举类记录，
-                    规范化后码值有且仅有"是"和"否"判为应申报标志类
+  check_flag     -- 类型与枚举值互斥检查：代码枚举类码值为"是/否"判为应申报标志类；
+                    标志类枚举值超过两项判为应申报代码枚举类
           |
   combine_results -- 汇总所有检查结果，判定通过/不通过
           |
-  soft_check     -- 软性检查：字段所属类型/枚举值唯一性/枚举值反义词
-                    （仅已通过行，不影响检查结果列）
+  soft_check     -- 软性检查：字段所属类型/枚举值数量与语义提示
+                    （依赖字段非空即执行，不影响检查结果列）
           |
   write_excel     -- 输出结果 Excel
           |
@@ -272,24 +272,39 @@ def normalize_enum_node(state: GraphState) -> dict:
 
 
 # ============================================================
-# 节点 4: 标志类误用检查（3a/3b 都完成后执行）
+# 节点 4: 字段类型与枚举值互斥检查（3a/3b 都完成后执行）
 # ============================================================
 
-def check_flag_node(state: GraphState) -> dict:
-    """检查代码枚举类字段的枚举值是否实为标志类。
+def _enum_item_count(enum_values) -> int:
+    """统计枚举值拆分的项数（规范化格式以分号分隔）。"""
+    if not enum_values:
+        return 0
+    return len([p for p in str(enum_values).split(";") if p.strip()])
 
-    仅处理此前检查（规则+业务含义）无问题的记录，使用规范化后的枚举值：
-    去掉码值前的代码后，若码值有且仅有"是"和"否"两项，
-    则该字段应为标志类而非代码枚举类，报错。
+
+def check_flag_node(state: GraphState) -> dict:
+    """检查字段所属类型与枚举值数量/码值是否互斥。
+
+    使用规范化后的枚举值做两类硬性检查：
+      - 代码枚举类：码值有且仅有"是"和"否"时，应为标志类；
+      - 标志类：枚举值超过两项时，应为代码枚举类。
     """
     print("\n=== 步骤 4/6: 标志类误用检查 ===")
     rows = state["rows"]
-    semantic_map = {r["row_index"]: r for r in state.get("semantic_results", [])}
-    enum_map = {r["row_index"]: r for r in state.get("enum_results", [])}
+    semantic_map, duplicate_semantic_indices = build_row_result_map(
+        state.get("semantic_results", [])
+    )
+    enum_map, duplicate_enum_indices = build_row_result_map(
+        state.get("enum_results", [])
+    )
 
     flagged = 0
     for row in rows:
         row["flag_issues"] = []
+
+        # LLM 结果重复时不做互斥判断，交由汇总节点统一标记人工复核
+        if row["index"] in duplicate_semantic_indices or row["index"] in duplicate_enum_indices:
+            continue
 
         # 仅检查此前无问题的记录
         if not row["rule_passed"]:
@@ -298,8 +313,7 @@ def check_flag_node(state: GraphState) -> dict:
         if sr and not sr["is_meaningful"]:
             continue
 
-        # 仅检查代码枚举类
-        if row["field_type"] != "代码枚举类":
+        if row["field_type"] not in ("代码枚举类", "标志类"):
             continue
 
         er = enum_map.get(row["index"])
@@ -323,9 +337,15 @@ def check_flag_node(state: GraphState) -> dict:
             else:
                 code_values.add(item)
 
-        if code_values == {"是", "否"}:
+        item_count = _enum_item_count(normalized)
+        if row["field_type"] == "代码枚举类" and code_values == {"是", "否"}:
             row["flag_issues"].append(
-                "枚举值有且仅有'是'和'否'两项，该字段应为标志类而非代码枚举类"
+                "代码枚举类字段的枚举值有且仅有'是'和'否'，应申报为标志类"
+            )
+            flagged += 1
+        elif row["field_type"] == "标志类" and item_count > 2:
+            row["flag_issues"].append(
+                f"标志类字段的枚举值超过两项（实际{item_count}项），应申报为代码枚举类"
             )
             flagged += 1
 
@@ -342,8 +362,12 @@ def combine_results_node(state: GraphState) -> dict:
     print("\n=== 步骤 5/6: 汇总检查结果 ===")
     rows = state["rows"]
 
-    semantic_map = {r["row_index"]: r for r in state.get("semantic_results", [])}
-    enum_map = {r["row_index"]: r for r in state.get("enum_results", [])}
+    semantic_map, duplicate_semantic_indices = build_row_result_map(
+        state.get("semantic_results", [])
+    )
+    enum_map, duplicate_enum_indices = build_row_result_map(
+        state.get("enum_results", [])
+    )
 
     for row in rows:
         idx = row["index"]
@@ -358,7 +382,9 @@ def combine_results_node(state: GraphState) -> dict:
             reasons.extend(row["flag_issues"])
 
         # 业务含义检查结果
-        if idx in semantic_map:
+        if idx in duplicate_semantic_indices:
+            reasons.append("LLM返回重复结果，业务含义检查需人工复核")
+        elif idx in semantic_map:
             sr = semantic_map[idx]
             row["is_meaningful"] = sr["is_meaningful"]
             row["meaning_reason"] = sr["reason"]
@@ -367,23 +393,26 @@ def combine_results_node(state: GraphState) -> dict:
         else:
             # 未被 LLM 检查的行
             if not row["business_meaning"]:
-                # 业务定义为空，规则检查的非空项已处理，此处跳过
                 row["is_meaningful"] = True
                 row["meaning_reason"] = ""
             else:
-                # 业务定义非空但 LLM 语义检查未执行（调用异常）
+                # 业务定义非空但 LLM 未返回该行结果
                 row["is_meaningful"] = True
-                row["meaning_reason"] = "语义检查未执行"
-                reasons.append("语义检查未执行")
+                row["meaning_reason"] = "LLM未返回该行结果"
+                reasons.append("LLM未返回该行结果，业务含义检查需人工复核")
 
         # 枚举值规范化结果
-        if idx in enum_map:
+        if idx in duplicate_enum_indices:
+            reasons.append("LLM返回重复结果，枚举值规范化需人工复核")
+        elif idx in enum_map:
             er = enum_map[idx]
             if not er["has_codes"]:
                 reasons.append("枚举值缺少代码，应填写'代码-码值'形式")
                 row["normalized_enum"] = ""   # 保留原始枚举值输出
             else:
                 row["normalized_enum"] = er["normalized"]
+        elif row["enum_values"]:
+            reasons.append("LLM未返回该行枚举值规范化结果，需人工复核")
 
         # 判定最终结果
         if reasons:
@@ -399,23 +428,15 @@ def combine_results_node(state: GraphState) -> dict:
 
 
 # ============================================================
-# 节点 5b: 软性检查（字段所属类型 + 枚举值唯一性 + 枚举值反义词，汇总后执行）
+# 节点 5b: 软性检查（字段所属类型 + 枚举值数量/语义提示，汇总后执行）
 # ============================================================
 
-def _enum_item_count(enum_values) -> int:
-    """统计枚举值拆分的项数（规范化格式以分号分隔）。"""
-    if not enum_values:
-        return 0
-    return len([p for p in str(enum_values).split(";") if p.strip()])
-
-
 def soft_check_node(state: GraphState) -> dict:
-    """LLM 检查"字段所属类型"、提示枚举值仅一项及两项反义词（软性提醒）。
+    """检查字段所属类型，并提示枚举值数量或语义可疑（软性提醒）。
 
-    仅对检查结果已通过的记录执行：
-      - 字段所属类型检查：业务定义非空且非代码枚举类
-      - 枚举值唯一性提示：枚举值拆分后仅有一项（不依赖 LLM）
-      - 枚举值反义词提示：代码枚举类枚举值两项且为反义词（LLM 判断）
+    仅检查依赖字段非空的记录，不依赖硬性检查是否通过：
+      - 字段所属类型检查：中文字段名/业务定义/字段所属类型非空；
+      - 枚举值数量/语义提示：代码枚举类或标志类枚举值两项时由 LLM 判断。
     结果写入"软性检查结果"列，不影响"检查结果"列判定。
     """
     print("\n=== 步骤 5b/6: 软性检查（字段所属类型 + 枚举值唯一性 + 反义词）===")
@@ -429,12 +450,12 @@ def soft_check_node(state: GraphState) -> dict:
             "字段所属类型": r["field_type"],
         }
         for r in rows
-        if r["check_result"] == "通过"
+        if r["field_name"]
         and r["business_meaning"]
-        and r["field_type"] != "代码枚举类"
+        and r["field_type"]
     ]
 
-    # 代码枚举类枚举值两项反义词提示（软性提醒，仅已通过行，LLM 判断）
+    # 代码枚举类/标志类两项枚举值语义提示（软性提醒，LLM 判断）
     antonym_rows = [
         {
             "row_index": r["index"],
@@ -442,8 +463,8 @@ def soft_check_node(state: GraphState) -> dict:
             "枚举值": r["normalized_enum"] or r["enum_values"],
         }
         for r in rows
-        if r["check_result"] == "通过"
-        and r["field_type"] == "代码枚举类"
+        if r["field_name"]
+        and r["field_type"] in ("代码枚举类", "标志类")
         and _enum_item_count(r["normalized_enum"] or r["enum_values"]) == 2
     ]
 
@@ -480,27 +501,42 @@ def soft_check_node(state: GraphState) -> dict:
                     f"因为{r['reason']}，当前字段所属类型可能错误，"
                     f"应为{r['correct_type']}，请联系业务确认"
                 )
-            # 枚举值仅有一项提示（软性提醒，仅已通过行，不依赖 LLM）
+            # 枚举值仅有一项提示（软性提醒，不依赖 LLM）
             # 优先用规范化后的枚举值，无规范化结果时回退原始枚举值
             enum_vals = row["normalized_enum"] or row["enum_values"]
-            if (
-                row["check_result"] == "通过"
-                and _enum_item_count(enum_vals) == 1
-            ):
-                notes.append(
-                    f"枚举值仅有一个取值'{enum_vals}'，"
-                    f"请确认该字段是否为枚举类型或需补充其他枚举值"
-                )
-            # 枚举值两项反义词提示（软性提醒，仅已通过行，LLM 判断）
+            if enum_vals and _enum_item_count(enum_vals) == 1:
+                if row["field_type"] == "标志类":
+                    notes.append(
+                        f"标志类应有两项语义相反的取值，当前仅有'{enum_vals}'，请人工确认"
+                    )
+                else:
+                    notes.append(
+                        f"枚举值仅有一个取值'{enum_vals}'，"
+                        f"请确认该字段是否为枚举类型或需补充其他枚举值"
+                    )
+            # 枚举值两项语义提示（软性提醒，LLM 判断）
             ar = antonym_map.get(row["index"])
             if row["index"] in duplicate_antonym_indices:
                 notes.append("LLM返回重复结果，枚举值反义词检查需人工复核")
             elif ar is None and row["index"] in antonym_sent_indices:
                 notes.append("LLM未返回该行结果，枚举值反义词检查需人工复核")
-            elif ar is not None and ar["is_antonym"]:
+            elif (
+                ar is not None
+                and row["field_type"] == "代码枚举类"
+                and ar["is_antonym"]
+            ):
                 notes.append(
                     f"枚举值两项（{enum_vals}）为反义词，"
                     f"该字段可能应为标志类而非代码枚举类，请联系业务确认"
+                )
+            elif (
+                ar is not None
+                and row["field_type"] == "标志类"
+                and not ar["is_antonym"]
+            ):
+                notes.append(
+                    f"枚举值两项（{enum_vals}）不能理解为反义词或'是/否'关系，"
+                    f"该字段可能不是标志类，请联系业务确认"
                 )
             row["soft_check_result"] = "\n".join(
                 f"{i}. {n}" for i, n in enumerate(notes, 1)
