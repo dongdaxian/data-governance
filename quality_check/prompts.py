@@ -352,9 +352,6 @@ DATA_EXAMPLE_CHECK_SYSTEM = """你的任务是结合字段中文名、业务定�
 - is_name_consistent: 数据示例是否与字段中文名语义一致；有歧义时填false
 - is_type_consistent: 数据示例是否与字段所属类型语义一致；有歧义时填false
 - suggested_field_type: 当is_type_consistent为false时，结合数据示例给出的疑似更合理类型；否则留空
-- key_item_category: 无/机构/客户/员工/产品组/基础产品/可售产品/产品域层级
-- key_item_needs_confirmation: 是否需要业务确认关键数据项的具体口径
-- key_item_reason: 关键数据项口径研判过程和需要确认的具体问题；不需要时留空
 - reason: 数据示例含义、名称一致性、类型一致性的判断过程和原因说明
 
 ## 判断要求
@@ -363,7 +360,7 @@ DATA_EXAMPLE_CHECK_SYSTEM = """你的任务是结合字段中文名、业务定�
    - "NULL""空""无""测试数据""参考测试数据""待补充""TBD""N/A"等疑似占位符，应判定为无实际业务含义；
    - 不能只做字面匹配，要结合字段语义判断示例是否只是测试值、示例说明、无意义符号或与业务无关内容；
    - 模糊、无法确定是否有业务含义时，倾向于判定为无实际业务含义。
-   - 如果示例无实际业务含义，只跳过名称一致性和类型一致性判断，不跳过关键数据项判断。
+   - 如果示例无实际业务含义，只跳过名称一致性和类型一致性判断。
 
 2. 如果数据示例有实际业务含义，继续判断示例是否与字段中文名一致：
    - 不要求逐字相同，而是要求业务语义能够对应；
@@ -378,19 +375,9 @@ DATA_EXAMPLE_CHECK_SYSTEM = """你的任务是结合字段中文名、业务定�
    - 只有"是/否"语义的示例与标志类更吻合；
    - 如果示例疑似某类型但当前类型不同，应在suggested_field_type中给出六类之一。
 
-4. 以字段中文名为主要依据，识别机构、客户、员工、产品等关键数据项；无论数据示例是否有实际业务含义，都必须判断是否需要确认口径。
-   域类型和数据示例只作为口径研判的辅助证据：
-   - 机构：包括但不限于机构编号、机构号、机构代码、网点、分行、辖行。需要区分交行内部11位机构代码an!(11)、交行内部10位机构编号an!(10)，以及长度不定的外部机构号；
-   - 客户：包括但不限于客户号、客户编号、ECIF客户号、总行客户号。多数应为16位ECIF客户号an!(16)，但也可能存在其他系统客户号且长度不定；
-   - 员工：包括但不限于人工号、人编号、柜员号、柜员编号、员工号、经理编号。常见为EUIF的7位柜员/员工编号an!(7)；
-   - 产品组：对应EPIM产品管理体系中的产品组标准编号an..(8)；
-   - 基础产品：对应EPIM产品管理体系中的基础产品标准编号an..(13)；
-   - 可售产品：对应EPIM产品管理体系中的可售产品标准编号an..(23)；
-   - 产品域层级：对应EPIM产品管理体系中的产品域层级编号an..(2)。
+4. Prompt中的例子只是说明判断方式，不是穷举。必须根据业务语义充分泛化，识别未列出的同类风险。
 
-5. Prompt中的例子只是说明判断方式，不是穷举。必须根据业务语义充分泛化，识别未列出的同类风险。
-
-6. 不确定时倾向提示需人工确认，不要为了通过而强行判定一致。
+5. 不确定时倾向提示需人工确认，不要为了通过而强行判定一致。
 
 ## 示例
 
@@ -409,9 +396,6 @@ DATA_EXAMPLE_CHECK_SYSTEM = """你的任务是结合字段中文名、业务定�
     "is_name_consistent": false,
     "is_type_consistent": true,
     "suggested_field_type": "",
-    "key_item_category": "无",
-    "key_item_needs_confirmation": false,
-    "key_item_reason": "",
     "reason": "示例为多个人员名称，但'公司负责人'无法确定是名称列表、员工号列表还是负责人清单，名称语义存在歧义。"
   },
   {
@@ -420,9 +404,6 @@ DATA_EXAMPLE_CHECK_SYSTEM = """你的任务是结合字段中文名、业务定�
     "is_name_consistent": true,
     "is_type_consistent": true,
     "suggested_field_type": "",
-    "key_item_category": "机构",
-    "key_item_needs_confirmation": true,
-    "key_item_reason": "'机构编号'与10位域类型、10位示例吻合，但需要确认是交行内部10位机构编号，还是外部机构号或其他机构编码。",
     "reason": "示例为10位数字字符，与当前编码类和域类型语义一致。"
   },
   {
@@ -431,9 +412,6 @@ DATA_EXAMPLE_CHECK_SYSTEM = """你的任务是结合字段中文名、业务定�
     "is_name_consistent": true,
     "is_type_consistent": false,
     "suggested_field_type": "文本类",
-    "key_item_category": "无",
-    "key_item_needs_confirmation": false,
-    "key_item_reason": "",
     "reason": "示例是自然语言描述，与文本类更吻合，与当前编码类不一致。"
   }
 ]"""

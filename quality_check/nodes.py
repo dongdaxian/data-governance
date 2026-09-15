@@ -17,7 +17,7 @@
           |
   combine_results -- 汇总所有检查结果，判定通过/不通过
           |
-  soft_check     -- 软性检查：字段所属类型/枚举值数量与语义/日期时间域/数据示例提示
+  soft_check     -- 软性检查：字段所属类型/枚举值数量与语义/关键数据项/数据示例提示
                     （依赖字段非空即执行，不影响检查结果列）
           |
   write_excel     -- 输出结果 Excel
@@ -38,6 +38,7 @@ from quality_check.llm import (
 from quality_check.constants import (
     VALID_FIELD_TYPES,
     DOMAIN_WHITELIST,
+    KEY_ITEM_RULES,
 )
 from common.domain_rules import parse_domain_type, check_data_example, RE_CHINESE
 from common.llm_client import build_row_result_map
@@ -283,21 +284,29 @@ def _enum_item_count(enum_values) -> int:
     return len([p for p in str(enum_values).split(";") if p.strip()])
 
 
-def _get_datetime_domain_notes(row: RowData) -> list[str]:
-    """检查明确表达日期/时间语义的字段是否使用标准日期时间域。"""
-    if (
-        row["field_type"] != "日期时间类"
-        or not row["field_name"].endswith(("日期", "时间", "时间戳"))
-    ):
+def _get_key_item_notes(row: RowData) -> list[str]:
+    """按字段名后缀和首个数据示例长度检查关键数据项口径。"""
+    field_name = row["field_name"].strip()
+    rule = next(
+        (item for item in KEY_ITEM_RULES if field_name.endswith(item["keywords"])),
+        None,
+    )
+    if not rule:
         return []
 
-    domain_key, _ = parse_domain_type(row["domain_type"])
-    if domain_key not in {"date", "time", "datetime", "timestamp"}:
-        return [
-            "日期时间类字段的域类型应为DATE、TIME、DATETIME或TIMESTAMP之一，"
-            f"当前为'{row['domain_type']}'，请人工确认"
-        ]
-    return []
+    first_example = str(row["data_example"] or "").strip()
+    for separator in ("；", ";", "，", ",", "、"):
+        first_example = first_example.split(separator, 1)[0].strip()
+    if not first_example:
+        return []
+
+    example_length = len(first_example)
+    if example_length in rule["allowed_lengths"]:
+        return []
+    return [
+        f"{rule['category']}类字段数据示例长度为{example_length}位，"
+        f"{rule['message']}"
+    ]
 
 
 def _get_enum_duplicate_notes(enum_values: str) -> list[str]:
@@ -573,7 +582,7 @@ def soft_check_node(state: GraphState) -> dict:
             example_error = str(exc)
 
     for row in rows:
-        notes = list(_get_datetime_domain_notes(row))
+        notes = list(_get_key_item_notes(row))
         r = type_result_map.get(row["index"])
         if type_error and row["index"] in type_sent_indices:
             notes.append("LLM字段所属类型检查未执行，需人工复核")
@@ -643,12 +652,6 @@ def soft_check_node(state: GraphState) -> dict:
                         notes.append(
                             f"数据示例与字段所属类型可能不一致：{er['reason']}"
                         )
-            if er["key_item_needs_confirmation"]:
-                category = er.get("key_item_category") or "关键数据项"
-                notes.append(
-                    f"{category}类字段需要确认口径：{er.get('key_item_reason') or er['reason']}"
-                )
-
         unique_notes = list(dict.fromkeys(notes))
         row["soft_check_result"] = "\n".join(
             f"{i}. {n}" for i, n in enumerate(unique_notes, 1)

@@ -116,17 +116,6 @@ class DataExampleCheckItem(BaseModel):
         default="",
         description="当is_type_consistent为false时，结合数据示例给出的疑似更合理类型；否则留空",
     )
-    key_item_category: str = Field(
-        default="无",
-        description="关键数据项类别：无/机构/客户/员工/产品组/基础产品/可售产品/产品域层级",
-    )
-    key_item_needs_confirmation: bool = Field(
-        description="是否属于机构/客户/员工/产品等关键数据项，且需要业务确认具体口径",
-    )
-    key_item_reason: str = Field(
-        default="",
-        description="关键数据项口径研判过程和需要确认的具体问题",
-    )
     reason: str = Field(description="数据示例含义、名称一致性、类型一致性的判断过程和原因说明")
 
 

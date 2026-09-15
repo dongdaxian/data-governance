@@ -316,9 +316,6 @@ def check_data_examples(
                 "is_name_consistent": item.is_name_consistent,
                 "is_type_consistent": item.is_type_consistent,
                 "suggested_field_type": item.suggested_field_type,
-                "key_item_category": item.key_item_category,
-                "key_item_needs_confirmation": item.key_item_needs_confirmation,
-                "key_item_reason": item.key_item_reason,
                 "reason": item.reason,
             })
 
