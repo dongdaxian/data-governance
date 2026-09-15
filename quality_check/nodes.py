@@ -309,8 +309,15 @@ def _detect_datetime_granularity(example: str) -> str | None:
 
 
 def _get_datetime_granularity_notes(row: RowData) -> list[str]:
-    """检查日期时间类字段的示例粒度与域类型是否匹配。"""
-    if row["field_type"] != "日期时间类" or not row["data_example"]:
+    """检查明确表达日期/时间语义的字段示例粒度与域类型是否匹配。
+
+    年、年月、月等部分日期字段不做粒度推断，避免误伤。
+    """
+    if (
+        row["field_type"] != "日期时间类"
+        or not row["data_example"]
+        or not row["field_name"].endswith(("日期", "时间", "时间戳"))
+    ):
         return []
 
     granularity = _detect_datetime_granularity(row["data_example"])
@@ -676,11 +683,11 @@ def soft_check_node(state: GraphState) -> dict:
                         notes.append(
                             f"数据示例与字段所属类型可能不一致：{er['reason']}"
                         )
-                if er["key_item_needs_confirmation"]:
-                    category = er.get("key_item_category") or "关键数据项"
-                    notes.append(
-                        f"{category}类字段需要确认口径：{er.get('key_item_reason') or er['reason']}"
-                    )
+            if er["key_item_needs_confirmation"]:
+                category = er.get("key_item_category") or "关键数据项"
+                notes.append(
+                    f"{category}类字段需要确认口径：{er.get('key_item_reason') or er['reason']}"
+                )
 
         unique_notes = list(dict.fromkeys(notes))
         row["soft_check_result"] = "\n".join(
