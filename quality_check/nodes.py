@@ -17,15 +17,13 @@
           |
   combine_results -- 汇总所有检查结果，判定通过/不通过
           |
-  soft_check     -- 软性检查：字段所属类型/枚举值数量与语义/数据示例提示
+  soft_check     -- 软性检查：字段所属类型/枚举值数量与语义/日期时间域/数据示例提示
                     （依赖字段非空即执行，不影响检查结果列）
           |
   write_excel     -- 输出结果 Excel
           |
   END
 """
-
-import re
 
 from quality_check.state import GraphState, RowData
 from quality_check.excel_utils import read_excel, write_excel
@@ -285,57 +283,19 @@ def _enum_item_count(enum_values) -> int:
     return len([p for p in str(enum_values).split(";") if p.strip()])
 
 
-_RE_DATE_ONLY = re.compile(r"^(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{8})$")
-_RE_DATETIME = re.compile(
-    r"^(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}[ T]\d{1,2}:\d{2}:\d{2}(\.\d{1,6})?|\d{14})$"
-)
-_RE_TIME_ONLY = re.compile(r"^(\d{1,2}:\d{2}:\d{2}(\.\d{1,6})?|\d{6}(\.\d{1,6})?)$")
-
-
-def _detect_datetime_granularity(example: str) -> str | None:
-    """识别数据示例的日期时间粒度；无法识别时返回 None。"""
-    value = str(example).strip()
-    for sep in (";", "；", ",", "，", "、"):
-        if sep in value:
-            value = value.split(sep, 1)[0].strip()
-            break
-    if _RE_DATE_ONLY.fullmatch(value):
-        return "date"
-    if _RE_DATETIME.fullmatch(value):
-        return "datetime"
-    if _RE_TIME_ONLY.fullmatch(value):
-        return "time"
-    return None
-
-
-def _get_datetime_granularity_notes(row: RowData) -> list[str]:
-    """检查明确表达日期/时间语义的字段示例粒度与域类型是否匹配。
-
-    年、年月、月等部分日期字段不做粒度推断，避免误伤。
-    """
+def _get_datetime_domain_notes(row: RowData) -> list[str]:
+    """检查明确表达日期/时间语义的字段是否使用标准日期时间域。"""
     if (
         row["field_type"] != "日期时间类"
-        or not row["data_example"]
         or not row["field_name"].endswith(("日期", "时间", "时间戳"))
     ):
         return []
 
-    granularity = _detect_datetime_granularity(row["data_example"])
-    current_domain = row["domain_type"].strip().upper()
-    if granularity == "date" and current_domain != "DATE":
+    domain_key, _ = parse_domain_type(row["domain_type"])
+    if domain_key not in {"date", "time", "datetime", "timestamp"}:
         return [
-            f"数据示例'{row['data_example']}'仅包含年月日，"
-            f"域类型应为DATE，当前为'{row['domain_type']}'，请人工确认"
-        ]
-    if granularity == "datetime" and current_domain not in {"DATETIME", "TIMESTAMP"}:
-        return [
-            f"数据示例'{row['data_example']}'包含年月日时分秒，"
-            f"域类型应为DATETIME或TIMESTAMP，当前为'{row['domain_type']}'，请人工确认"
-        ]
-    if granularity == "time" and current_domain != "TIME":
-        return [
-            f"数据示例'{row['data_example']}'仅包含时分秒，"
-            f"域类型应为TIME，当前为'{row['domain_type']}'，请人工确认"
+            "日期时间类字段的域类型应为DATE、TIME、DATETIME或TIMESTAMP之一，"
+            f"当前为'{row['domain_type']}'，请人工确认"
         ]
     return []
 
@@ -520,7 +480,7 @@ def soft_check_node(state: GraphState) -> dict:
     仅检查依赖字段非空的记录，不依赖硬性检查是否通过：
       - 字段所属类型检查：非代码枚举类/标志类的通用语义类型提示；
       - 枚举值数量/语义提示：代码枚举类或标志类枚举值两项时由 LLM 判断；
-      - 日期时间粒度提示：硬编码识别年月日、年月日时分秒、时分秒；
+      - 日期时间域类型提示：日期/时间/时间戳字段使用标准日期时间域；
       - 数据示例语义提示：LLM 判断示例有效性、名称/类型一致性和关键数据项风险。
     结果写入"软性检查结果"列，不影响"检查结果"列判定。
     """
@@ -613,7 +573,7 @@ def soft_check_node(state: GraphState) -> dict:
             example_error = str(exc)
 
     for row in rows:
-        notes = list(_get_datetime_granularity_notes(row))
+        notes = list(_get_datetime_domain_notes(row))
         r = type_result_map.get(row["index"])
         if type_error and row["index"] in type_sent_indices:
             notes.append("LLM字段所属类型检查未执行，需人工复核")
