@@ -486,7 +486,7 @@ def combine_results_node(state: GraphState) -> dict:
 def soft_check_node(state: GraphState) -> dict:
     """执行软性检查，并将结果统一写入软性检查结果列。
 
-    仅检查硬性检查通过且依赖字段非空的记录：
+    仅检查硬性检查通过的记录：
       - 字段所属类型检查：非代码枚举类/标志类的通用语义类型提示；
       - 枚举值数量/语义提示：代码枚举类或标志类枚举值两项时由 LLM 判断；
       - 日期时间域类型提示：日期/时间/时间戳字段使用标准日期时间域；
@@ -505,10 +505,7 @@ def soft_check_node(state: GraphState) -> dict:
             "字段所属类型": r["field_type"],
         }
         for r in rows
-        if r["field_name"]
-        and r["business_meaning"]
-        and r["field_type"]
-        and r["field_type"] not in ("代码枚举类", "标志类")
+        if r["field_type"] not in ("代码枚举类", "标志类")
     ]
 
     antonym_rows = [
@@ -518,8 +515,7 @@ def soft_check_node(state: GraphState) -> dict:
             "枚举值": r["normalized_enum"] or r["enum_values"],
         }
         for r in rows
-        if r["field_name"]
-        and r["field_type"] in ("代码枚举类", "标志类")
+        if r["field_type"] in ("代码枚举类", "标志类")
         and _enum_item_count(r["normalized_enum"] or r["enum_values"]) == 2
     ]
 
@@ -533,7 +529,6 @@ def soft_check_node(state: GraphState) -> dict:
             "数据示例": r["data_example"],
         }
         for r in rows
-        if r["field_name"] and r["data_example"]
     ]
 
     print(
