@@ -48,6 +48,7 @@ DOMAIN_WHITELIST = {
         "date", "time", "datetime", "timestamp",
         "n_fix", "n_var",
         "an_fix", "an_var",
+        "anc_fix", "anc_var",
     },
     "文本类": {
         "a_var", "a_fix", "a_var_nolimit",

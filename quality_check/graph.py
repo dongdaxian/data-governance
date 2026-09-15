@@ -9,7 +9,8 @@
 normalize_enum 和 check_semantic 串行执行，各自写入独立的状态字段，
 check_enum_type_consistency 在两者完成后执行字段类型与枚举值一致性检查，
 combine_results 作为 barrier 节点汇总，
-soft_check 在汇总后执行软性检查（字段所属类型/枚举值唯一性/枚举值反义词，不影响检查结果列）。
+soft_check 在汇总后执行软性检查（字段所属类型/枚举值数量与语义/日期时间粒度/数据示例语义，
+不影响检查结果列）。
 """
 
 from langgraph.graph import StateGraph, START, END

@@ -17,6 +17,7 @@ from quality_check.state import (
     EnumNormalizationResult,
     FieldTypeCheckResult,
     EnumAntonymResult,
+    DataExampleCheckResult,
 )
 from quality_check.prompts import (
     BUSINESS_MEANING_SYSTEM,
@@ -27,6 +28,8 @@ from quality_check.prompts import (
     FIELD_TYPE_CHECK_USER,
     ENUM_ANTONYM_SYSTEM,
     ENUM_ANTONYM_USER,
+    DATA_EXAMPLE_CHECK_SYSTEM,
+    DATA_EXAMPLE_CHECK_USER,
 )
 
 
@@ -260,6 +263,62 @@ def check_enum_antonyms(
             all_results.append({
                 "row_index": item.row_index,
                 "is_antonym": item.is_antonym,
+                "reason": item.reason,
+            })
+
+    return all_results
+
+
+# ============================================================
+# 数据示例语义检查
+# ============================================================
+
+def check_data_example_batch(
+    llm: ChatOpenAI,
+    rows: list[dict],
+) -> DataExampleCheckResult:
+    """调用 LLM 批量检查数据示例语义风险。
+
+    Args:
+        llm: LLM 实例
+        rows: 数据示例检查输入列表
+
+    Returns:
+        DataExampleCheckResult
+    """
+    data_str = json.dumps(rows, ensure_ascii=False, indent=2)
+    user_text = DATA_EXAMPLE_CHECK_USER.format(data=data_str)
+    return call_with_retry(llm, DataExampleCheckResult, DATA_EXAMPLE_CHECK_SYSTEM, user_text)
+
+
+def check_data_examples(
+    llm: ChatOpenAI,
+    rows_data: list[dict],
+) -> list[dict]:
+    """分批并发调用 LLM 检查数据示例，返回扁平结果列表。
+
+    Args:
+        llm: LLM 实例
+        rows_data: [{"row_index": 0, "字段中文名": "...", ...}, ...]
+
+    Returns:
+        [{"row_index": 0, "has_real_meaning": True, ...}, ...]
+    """
+    all_results = []
+
+    for _, result in _run_batches_parallel(
+        check_data_example_batch, llm, rows_data, "数据示例语义检查"
+    ):
+        for item in result.results:
+            all_results.append({
+                "row_index": item.row_index,
+                "has_real_meaning": item.has_real_meaning,
+                "is_name_consistent": item.is_name_consistent,
+                "is_type_consistent": item.is_type_consistent,
+                "suggested_field_type": item.suggested_field_type,
+                "key_item_category": item.key_item_category,
+                "key_item_needs_confirmation": item.key_item_needs_confirmation,
+                "key_item_reason": item.key_item_reason,
                 "reason": item.reason,
             })
 

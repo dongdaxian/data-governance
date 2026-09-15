@@ -17,13 +17,15 @@
           |
   combine_results -- 汇总所有检查结果，判定通过/不通过
           |
-  soft_check     -- 软性检查：字段所属类型/枚举值数量与语义提示
+  soft_check     -- 软性检查：字段所属类型/枚举值数量与语义/数据示例提示
                     （依赖字段非空即执行，不影响检查结果列）
           |
   write_excel     -- 输出结果 Excel
           |
   END
 """
+
+import re
 
 from quality_check.state import GraphState, RowData
 from quality_check.excel_utils import read_excel, write_excel
@@ -33,6 +35,7 @@ from quality_check.llm import (
     normalize_enum_values,
     check_field_types,
     check_enum_antonyms,
+    check_data_examples,
 )
 from quality_check.constants import (
     VALID_FIELD_TYPES,
@@ -50,7 +53,7 @@ def load_excel_node(state: GraphState) -> dict:
     """读取输入 Excel，初始化 RowData 列表。"""
     print("\n=== 步骤 1/6: 加载 Excel ===")
     rows = read_excel(state["input_file"])
-    return {"rows": rows, "semantic_results": [], "enum_results": []}
+    return {"rows": rows, "semantic_results": [], "enum_results": [], "data_example_results": []}
 
 
 # ============================================================
@@ -282,6 +285,86 @@ def _enum_item_count(enum_values) -> int:
     return len([p for p in str(enum_values).split(";") if p.strip()])
 
 
+_RE_DATE_ONLY = re.compile(r"^(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{8})$")
+_RE_DATETIME = re.compile(
+    r"^(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}[ T]\d{1,2}:\d{2}:\d{2}(\.\d{1,6})?|\d{14})$"
+)
+_RE_TIME_ONLY = re.compile(r"^(\d{1,2}:\d{2}:\d{2}(\.\d{1,6})?|\d{6}(\.\d{1,6})?)$")
+
+
+def _detect_datetime_granularity(example: str) -> str | None:
+    """识别数据示例的日期时间粒度；无法识别时返回 None。"""
+    value = str(example).strip()
+    for sep in (";", "；", ",", "，", "、"):
+        if sep in value:
+            value = value.split(sep, 1)[0].strip()
+            break
+    if _RE_DATE_ONLY.fullmatch(value):
+        return "date"
+    if _RE_DATETIME.fullmatch(value):
+        return "datetime"
+    if _RE_TIME_ONLY.fullmatch(value):
+        return "time"
+    return None
+
+
+def _get_datetime_granularity_notes(row: RowData) -> list[str]:
+    """检查日期时间类字段的示例粒度与域类型是否匹配。"""
+    if row["field_type"] != "日期时间类" or not row["data_example"]:
+        return []
+
+    granularity = _detect_datetime_granularity(row["data_example"])
+    current_domain = row["domain_type"].strip().upper()
+    if granularity == "date" and current_domain != "DATE":
+        return [
+            f"数据示例'{row['data_example']}'仅包含年月日，"
+            f"域类型应为DATE，当前为'{row['domain_type']}'，请人工确认"
+        ]
+    if granularity == "datetime" and current_domain not in {"DATETIME", "TIMESTAMP"}:
+        return [
+            f"数据示例'{row['data_example']}'包含年月日时分秒，"
+            f"域类型应为DATETIME或TIMESTAMP，当前为'{row['domain_type']}'，请人工确认"
+        ]
+    if granularity == "time" and current_domain != "TIME":
+        return [
+            f"数据示例'{row['data_example']}'仅包含时分秒，"
+            f"域类型应为TIME，当前为'{row['domain_type']}'，请人工确认"
+        ]
+    return []
+
+
+def _get_enum_duplicate_notes(enum_values: str) -> list[str]:
+    """检查规范化枚举值中的重复码和重复码值。"""
+    enum_items = [
+        item.strip()
+        for item in str(enum_values).split(";")
+        if item.strip()
+    ]
+    if len(enum_items) <= 1:
+        return []
+
+    code_parts = [
+        item.partition("-")[0].strip() if "-" in item else ""
+        for item in enum_items
+    ]
+    value_parts = [
+        item.partition("-")[2].strip() if "-" in item else item
+        for item in enum_items
+    ]
+    duplicate_codes = [
+        code for code in set(code_parts) if code and code_parts.count(code) > 1
+    ]
+    duplicate_values = [
+        value for value in set(value_parts) if value and value_parts.count(value) > 1
+    ]
+    notes = []
+    if duplicate_codes:
+        notes.append(f"枚举码重复：{'、'.join(duplicate_codes)}出现多次，请人工确认")
+    if duplicate_values:
+        notes.append(f"枚举码值重复：{'、'.join(duplicate_values)}出现多次，请人工确认")
+    return notes
+
+
 def check_enum_type_consistency_node(state: GraphState) -> dict:
     """检查字段所属类型与枚举值数量/码值是否一致。
 
@@ -425,14 +508,16 @@ def combine_results_node(state: GraphState) -> dict:
 # ============================================================
 
 def soft_check_node(state: GraphState) -> dict:
-    """检查字段所属类型，并提示枚举值数量或语义可疑（软性提醒）。
+    """执行软性检查，并将结果统一写入软性检查结果列。
 
     仅检查依赖字段非空的记录，不依赖硬性检查是否通过：
       - 字段所属类型检查：非代码枚举类/标志类的通用语义类型提示；
-      - 枚举值数量/语义提示：代码枚举类或标志类枚举值两项时由 LLM 判断。
+      - 枚举值数量/语义提示：代码枚举类或标志类枚举值两项时由 LLM 判断；
+      - 日期时间粒度提示：硬编码识别年月日、年月日时分秒、时分秒；
+      - 数据示例语义提示：LLM 判断示例有效性、名称/类型一致性和关键数据项风险。
     结果写入"软性检查结果"列，不影响"检查结果"列判定。
     """
-    print("\n=== 步骤 5b/6: 软性检查（字段所属类型 + 枚举值唯一性 + 反义词）===")
+    print("\n=== 步骤 5b/6: 软性检查（字段所属类型 + 枚举值 + 数据示例）===")
     rows = state["rows"]
 
     rows_to_check = [
@@ -449,7 +534,6 @@ def soft_check_node(state: GraphState) -> dict:
         and r["field_type"] not in ("代码枚举类", "标志类")
     ]
 
-    # 代码枚举类/标志类两项枚举值语义提示（软性提醒，LLM 判断）
     antonym_rows = [
         {
             "row_index": r["index"],
@@ -462,123 +546,163 @@ def soft_check_node(state: GraphState) -> dict:
         and _enum_item_count(r["normalized_enum"] or r["enum_values"]) == 2
     ]
 
-    print(f"  共 {len(rows_to_check)} 行需要检查字段所属类型，"
-          f"{len(antonym_rows)} 行需要检查枚举值反义词")
+    example_rows = [
+        {
+            "row_index": r["index"],
+            "字段中文名": r["field_name"],
+            "业务定义": r["business_meaning"],
+            "字段所属类型": r["field_type"],
+            "域类型": r["domain_type"],
+            "数据示例": r["data_example"],
+        }
+        for r in rows
+        if r["field_name"] and r["data_example"]
+    ]
+
+    print(
+        f"  共 {len(rows_to_check)} 行需要检查字段所属类型，"
+        f"{len(antonym_rows)} 行需要检查枚举值反义词，"
+        f"{len(example_rows)} 行需要检查数据示例语义"
+    )
     type_sent_indices = {r["row_index"] for r in rows_to_check}
     antonym_sent_indices = {r["row_index"] for r in antonym_rows}
-    duplicate_type_indices = set()
-    duplicate_antonym_indices = set()
-    try:
-        results = []
-        result_map = {}
-        if rows_to_check:
-            llm = get_llm()
-            results = check_field_types(llm, rows_to_check)
-            result_map, duplicate_type_indices = build_row_result_map(results)
+    example_sent_indices = {r["row_index"] for r in example_rows}
 
-        antonym_map = {}
-        if antonym_rows:
-            llm = get_llm()
-            antonym_map, duplicate_antonym_indices = build_row_result_map(
-                check_enum_antonyms(llm, antonym_rows)
+    type_results: list[dict] = []
+    type_result_map: dict[int, dict] = {}
+    duplicate_type_indices: set[int] = set()
+    type_error = ""
+    if rows_to_check:
+        try:
+            type_results = check_field_types(get_llm(), rows_to_check)
+            type_result_map, duplicate_type_indices = build_row_result_map(type_results)
+        except Exception as exc:
+            type_error = str(exc)
+
+    antonym_results: list[dict] = []
+    antonym_result_map: dict[int, dict] = {}
+    duplicate_antonym_indices: set[int] = set()
+    antonym_error = ""
+    if antonym_rows:
+        try:
+            antonym_results = check_enum_antonyms(get_llm(), antonym_rows)
+            antonym_result_map, duplicate_antonym_indices = build_row_result_map(
+                antonym_results
+            )
+        except Exception as exc:
+            antonym_error = str(exc)
+
+    example_results: list[dict] = []
+    example_result_map: dict[int, dict] = {}
+    duplicate_example_indices: set[int] = set()
+    example_error = ""
+    if example_rows:
+        try:
+            example_results = check_data_examples(get_llm(), example_rows)
+            example_result_map, duplicate_example_indices = build_row_result_map(
+                example_results
+            )
+        except Exception as exc:
+            example_error = str(exc)
+
+    for row in rows:
+        notes = list(_get_datetime_granularity_notes(row))
+        r = type_result_map.get(row["index"])
+        if type_error and row["index"] in type_sent_indices:
+            notes.append("LLM字段所属类型检查未执行，需人工复核")
+        elif row["index"] in duplicate_type_indices:
+            notes.append("LLM返回重复结果，字段所属类型检查需人工复核")
+        elif r is None and row["index"] in type_sent_indices:
+            notes.append("LLM未返回该行结果，字段所属类型检查需人工复核")
+        elif r is not None and not r["is_correct"]:
+            notes.append(
+                f"因为{r['reason']}，当前字段所属类型可能错误，"
+                f"应为{r['correct_type']}，请联系业务确认"
             )
 
-        for row in rows:
-            notes = []
-            r = result_map.get(row["index"])
-            if row["index"] in duplicate_type_indices:
-                notes.append("LLM返回重复结果，字段所属类型检查需人工复核")
-            elif r is None and row["index"] in type_sent_indices:
-                notes.append("LLM未返回该行结果，字段所属类型检查需人工复核")
-            elif r is not None and not r["is_correct"]:
+        enum_vals = row["normalized_enum"] or row["enum_values"]
+        if enum_vals and _enum_item_count(enum_vals) == 1:
+            if row["field_type"] == "标志类":
                 notes.append(
-                    f"因为{r['reason']}，当前字段所属类型可能错误，"
-                    f"应为{r['correct_type']}，请联系业务确认"
+                    f"标志类应有两项语义相反的取值，当前仅有'{enum_vals}'，请人工确认"
                 )
-            # 枚举值仅有一项提示（软性提醒，不依赖 LLM）
-            # 优先用规范化后的枚举值，无规范化结果时回退原始枚举值
-            enum_vals = row["normalized_enum"] or row["enum_values"]
-            if enum_vals and _enum_item_count(enum_vals) == 1:
-                if row["field_type"] == "标志类":
-                    notes.append(
-                        f"标志类应有两项语义相反的取值，当前仅有'{enum_vals}'，请人工确认"
-                    )
-                else:
-                    notes.append(
-                        f"枚举值仅有一个取值'{enum_vals}'，"
-                        f"请确认该字段是否为枚举类型或需补充其他枚举值"
-                    )
-            if enum_vals and _enum_item_count(enum_vals) > 1:
-                enum_items = [
-                    item.strip()
-                    for item in str(enum_vals).split(";")
-                    if item.strip()
-                ]
-                code_parts = [
-                    item.partition("-")[0].strip() if "-" in item else ""
-                    for item in enum_items
-                ]
-                value_parts = [
-                    item.partition("-")[2].strip() if "-" in item else item
-                    for item in enum_items
-                ]
-                duplicate_codes = [
-                    code for code in set(code_parts) if code
-                    and code_parts.count(code) > 1
-                ]
-                duplicate_values = [
-                    value for value in set(value_parts) if value
-                    and value_parts.count(value) > 1
-                ]
-                if duplicate_codes:
-                    notes.append(
-                        f"枚举码重复：{'、'.join(duplicate_codes)}出现多次，请人工确认"
-                    )
-                if duplicate_values:
-                    notes.append(
-                        f"枚举码值重复：{'、'.join(duplicate_values)}出现多次，请人工确认"
-                    )
-            # 枚举值两项语义提示（软性提醒，LLM 判断）
-            ar = antonym_map.get(row["index"])
-            if row["index"] in duplicate_antonym_indices:
-                notes.append("LLM返回重复结果，枚举值反义词检查需人工复核")
-            elif ar is None and row["index"] in antonym_sent_indices:
-                notes.append("LLM未返回该行结果，枚举值反义词检查需人工复核")
-            elif (
-                ar is not None
-                and row["field_type"] == "代码枚举类"
-                and ar["is_antonym"]
-            ):
+            else:
                 notes.append(
-                    f"枚举值两项（{enum_vals}）为反义词，"
-                    f"该字段可能应为标志类而非代码枚举类，请联系业务确认"
+                    f"枚举值仅有一个取值'{enum_vals}'，"
+                    f"请确认该字段是否为枚举类型或需补充其他枚举值"
                 )
-            elif (
-                ar is not None
-                and row["field_type"] == "标志类"
-                and not ar["is_antonym"]
-            ):
-                notes.append(
-                    f"枚举值两项（{enum_vals}）不能理解为反义词或'是/否'关系，"
-                    f"该字段可能不是标志类，请联系业务确认"
-                )
-            unique_notes = list(dict.fromkeys(notes))
-            row["soft_check_result"] = "\n".join(
-                f"{i}. {n}" for i, n in enumerate(unique_notes, 1)
+        notes.extend(_get_enum_duplicate_notes(enum_vals))
+
+        ar = antonym_result_map.get(row["index"])
+        if antonym_error and row["index"] in antonym_sent_indices:
+            notes.append("LLM枚举值反义词检查未执行，需人工复核")
+        elif row["index"] in duplicate_antonym_indices:
+            notes.append("LLM返回重复结果，枚举值反义词检查需人工复核")
+        elif ar is None and row["index"] in antonym_sent_indices:
+            notes.append("LLM未返回该行结果，枚举值反义词检查需人工复核")
+        elif ar is not None and row["field_type"] == "代码枚举类" and ar["is_antonym"]:
+            notes.append(
+                f"枚举值两项（{enum_vals}）为反义词，"
+                f"该字段可能应为标志类而非代码枚举类，请联系业务确认"
+            )
+        elif ar is not None and row["field_type"] == "标志类" and not ar["is_antonym"]:
+            notes.append(
+                f"枚举值两项（{enum_vals}）不能理解为反义词或'是/否'关系，"
+                f"该字段可能不是标志类，请联系业务确认"
             )
 
-        print(f"  软性检查完成：字段所属类型 {len(results)} 条结果，"
-              f"枚举值反义词 {len(antonym_map)} 条结果")
-        return {"soft_check_results": results}
-    except Exception as e:
-        print(f"  [WARNING] LLM 软性检查失败: {e}")
-        print("  跳过软性检查，仅输出规则检查结果")
-        for row in rows:
-            if row["index"] in type_sent_indices:
-                row["soft_check_result"] = "LLM软性检查未执行，字段所属类型需人工复核"
-            elif row["index"] in antonym_sent_indices:
-                row["soft_check_result"] = "LLM软性检查未执行，枚举值反义词需人工复核"
-        return {"soft_check_results": []}
+        er = example_result_map.get(row["index"])
+        if example_error and row["index"] in example_sent_indices:
+            notes.append("LLM数据示例语义检查未执行，需人工复核")
+        elif row["index"] in duplicate_example_indices:
+            notes.append("LLM返回重复结果，数据示例语义检查需人工复核")
+        elif er is None and row["index"] in example_sent_indices:
+            notes.append("LLM未返回该行结果，数据示例语义检查需人工复核")
+        elif er is not None:
+            if not er["has_real_meaning"]:
+                notes.append(f"数据示例疑似无实际业务含义：{er['reason']}")
+            else:
+                if not er["is_name_consistent"]:
+                    notes.append(
+                        f"数据示例与字段中文名可能不一致或存在歧义：{er['reason']}"
+                    )
+                if not er["is_type_consistent"]:
+                    suggested_type = er.get("suggested_field_type", "")
+                    if suggested_type:
+                        notes.append(
+                            f"根据数据示例，字段所属类型疑似{suggested_type}：{er['reason']}"
+                        )
+                    else:
+                        notes.append(
+                            f"数据示例与字段所属类型可能不一致：{er['reason']}"
+                        )
+                if er["key_item_needs_confirmation"]:
+                    category = er.get("key_item_category") or "关键数据项"
+                    notes.append(
+                        f"{category}类字段需要确认口径：{er.get('key_item_reason') or er['reason']}"
+                    )
+
+        unique_notes = list(dict.fromkeys(notes))
+        row["soft_check_result"] = "\n".join(
+            f"{i}. {n}" for i, n in enumerate(unique_notes, 1)
+        )
+
+    if type_error or antonym_error or example_error:
+        print(
+            f"  [WARNING] LLM软性检查部分失败: "
+            f"字段类型={type_error or '正常'}, "
+            f"枚举反义词={antonym_error or '正常'}, "
+            f"数据示例={example_error or '正常'}"
+        )
+    print(
+        f"  软性检查完成：字段所属类型 {len(type_results)} 条结果，"
+        f"枚举值反义词 {len(antonym_results)} 条结果，"
+        f"数据示例语义 {len(example_results)} 条结果"
+    )
+    return {
+        "soft_check_results": type_results,
+        "data_example_results": example_results,
+    }
 
 
 # ============================================================

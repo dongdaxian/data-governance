@@ -45,6 +45,7 @@ class GraphState(TypedDict):
     output_file: str
     semantic_results: list[dict]
     enum_results: list[dict]
+    data_example_results: list[dict]
     soft_check_results: list[dict]
 
 
@@ -103,3 +104,32 @@ class EnumAntonymItem(BaseModel):
 class EnumAntonymResult(BaseModel):
     """批量枚举值反义词判断结果。"""
     results: list[EnumAntonymItem] = Field(description="每行的判断结果列表")
+
+
+class DataExampleCheckItem(BaseModel):
+    """单行数据示例语义检查结果。"""
+    row_index: int = Field(description="行号，与输入数据中的row_index对应")
+    has_real_meaning: bool = Field(description="数据示例是否有实际业务含义。true=有，false=无")
+    is_name_consistent: bool = Field(description="数据示例是否与字段中文名语义一致。true=一致，false=不一致或存在歧义")
+    is_type_consistent: bool = Field(description="数据示例是否与字段所属类型语义一致。true=一致，false=不一致或存在歧义")
+    suggested_field_type: str = Field(
+        default="",
+        description="当is_type_consistent为false时，结合数据示例给出的疑似更合理类型；否则留空",
+    )
+    key_item_category: str = Field(
+        default="无",
+        description="关键数据项类别：无/机构/客户/员工/产品组/基础产品/可售产品/产品域层级",
+    )
+    key_item_needs_confirmation: bool = Field(
+        description="是否属于机构/客户/员工/产品等关键数据项，且需要业务确认具体口径",
+    )
+    key_item_reason: str = Field(
+        default="",
+        description="关键数据项口径研判过程和需要确认的具体问题",
+    )
+    reason: str = Field(description="数据示例含义、名称一致性、类型一致性的判断过程和原因说明")
+
+
+class DataExampleCheckResult(BaseModel):
+    """批量数据示例语义检查结果。"""
+    results: list[DataExampleCheckItem] = Field(description="每行的检查结果列表")
