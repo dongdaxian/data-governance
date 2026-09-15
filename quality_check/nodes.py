@@ -199,7 +199,7 @@ def check_rules_node(state: GraphState) -> dict:
 
 
 # ============================================================
-# 节点 3b: LLM 业务含义检查（枚举值规范化之后执行）
+# LLM 业务含义检查（枚举值规范化之后执行）
 # ============================================================
 
 def check_semantic_node(state: GraphState) -> dict:
@@ -237,7 +237,7 @@ def check_semantic_node(state: GraphState) -> dict:
 
 
 # ============================================================
-# 节点 3a: LLM 枚举值规范化（check_rules 之后执行）
+# LLM 枚举值规范化（check_rules 之后执行）
 # ============================================================
 
 def normalize_enum_node(state: GraphState) -> dict:
@@ -274,72 +274,8 @@ def normalize_enum_node(state: GraphState) -> dict:
 
 
 # ============================================================
-# 节点 4: 字段类型与枚举值一致性检查（3a/3b 都完成后执行）
+# 字段类型与枚举值一致性检查
 # ============================================================
-
-def _enum_item_count(enum_values) -> int:
-    """统计枚举值拆分的项数（规范化格式以分号分隔）。"""
-    if not enum_values:
-        return 0
-    return len([p for p in str(enum_values).split(";") if p.strip()])
-
-
-def _get_key_item_notes(row: RowData) -> list[str]:
-    """按字段名后缀和首个数据示例长度检查关键数据项口径。"""
-    field_name = row["field_name"].strip()
-    rule = next(
-        (item for item in KEY_ITEM_RULES if field_name.endswith(item["keywords"])),
-        None,
-    )
-    if not rule:
-        return []
-
-    first_example = str(row["data_example"] or "").strip()
-    for separator in ("；", ";", "，", ",", "、"):
-        first_example = first_example.split(separator, 1)[0].strip()
-    if not first_example:
-        return []
-
-    example_length = len(first_example)
-    if example_length in rule["allowed_lengths"]:
-        return []
-    return [
-        f"{rule['category']}类字段数据示例长度为{example_length}位，"
-        f"{rule['message']}"
-    ]
-
-
-def _get_enum_duplicate_notes(enum_values: str) -> list[str]:
-    """检查规范化枚举值中的重复码和重复码值。"""
-    enum_items = [
-        item.strip()
-        for item in str(enum_values).split(";")
-        if item.strip()
-    ]
-    if len(enum_items) <= 1:
-        return []
-
-    code_parts = [
-        item.partition("-")[0].strip() if "-" in item else ""
-        for item in enum_items
-    ]
-    value_parts = [
-        item.partition("-")[2].strip() if "-" in item else item
-        for item in enum_items
-    ]
-    duplicate_codes = [
-        code for code in set(code_parts) if code and code_parts.count(code) > 1
-    ]
-    duplicate_values = [
-        value for value in set(value_parts) if value and value_parts.count(value) > 1
-    ]
-    notes = []
-    if duplicate_codes:
-        notes.append(f"枚举码重复：{'、'.join(duplicate_codes)}出现多次，请人工确认")
-    if duplicate_values:
-        notes.append(f"枚举码值重复：{'、'.join(duplicate_values)}出现多次，请人工确认")
-    return notes
-
 
 def check_enum_type_consistency_node(state: GraphState) -> dict:
     """检查字段所属类型与枚举值数量/码值是否一致。
@@ -480,7 +416,7 @@ def combine_results_node(state: GraphState) -> dict:
 
 
 # ============================================================
-# 节点 5b: 软性检查（字段所属类型 + 枚举值数量/语义提示，汇总后执行）
+# 软性检查（字段所属类型 + 枚举值数量/语义提示，汇总后执行）
 # ============================================================
 
 def soft_check_node(state: GraphState) -> dict:
@@ -493,7 +429,7 @@ def soft_check_node(state: GraphState) -> dict:
       - 数据示例语义提示：LLM 判断示例有效性、名称/类型一致性和关键数据项风险。
     结果写入"软性检查结果"列，不影响"检查结果"列判定。
     """
-    print("\n=== 步骤 5b/6: 软性检查（字段所属类型 + 枚举值 + 数据示例）===")
+    print("\n=== 软性检查（字段所属类型 + 枚举值 + 数据示例）===")
     rows = state["rows"]
     rows = [r for r in rows if r["check_result"] == "通过"]
 
@@ -669,6 +605,69 @@ def soft_check_node(state: GraphState) -> dict:
         "soft_check_results": type_results,
         "data_example_results": example_results,
     }
+
+def _enum_item_count(enum_values) -> int:
+    """统计枚举值拆分的项数（规范化格式以分号分隔）。"""
+    if not enum_values:
+        return 0
+    return len([p for p in str(enum_values).split(";") if p.strip()])
+
+
+def _get_key_item_notes(row: RowData) -> list[str]:
+    """按字段名后缀和首个数据示例长度检查关键数据项口径。"""
+    field_name = row["field_name"].strip()
+    rule = next(
+        (item for item in KEY_ITEM_RULES if field_name.endswith(item["keywords"])),
+        None,
+    )
+    if not rule:
+        return []
+
+    first_example = str(row["data_example"] or "").strip()
+    for separator in ("；", ";", "，", ",", "、"):
+        first_example = first_example.split(separator, 1)[0].strip()
+    if not first_example:
+        return []
+
+    example_length = len(first_example)
+    if example_length in rule["allowed_lengths"]:
+        return []
+    return [
+        f"{rule['category']}类字段数据示例长度为{example_length}位，"
+        f"{rule['message']}"
+    ]
+
+
+def _get_enum_duplicate_notes(enum_values: str) -> list[str]:
+    """检查规范化枚举值中的重复码和重复码值。"""
+    enum_items = [
+        item.strip()
+        for item in str(enum_values).split(";")
+        if item.strip()
+    ]
+    if len(enum_items) <= 1:
+        return []
+
+    code_parts = [
+        item.partition("-")[0].strip() if "-" in item else ""
+        for item in enum_items
+    ]
+    value_parts = [
+        item.partition("-")[2].strip() if "-" in item else item
+        for item in enum_items
+    ]
+    duplicate_codes = [
+        code for code in set(code_parts) if code and code_parts.count(code) > 1
+    ]
+    duplicate_values = [
+        value for value in set(value_parts) if value and value_parts.count(value) > 1
+    ]
+    notes = []
+    if duplicate_codes:
+        notes.append(f"枚举码重复：{'、'.join(duplicate_codes)}出现多次，请人工确认")
+    if duplicate_values:
+        notes.append(f"枚举码值重复：{'、'.join(duplicate_values)}出现多次，请人工确认")
+    return notes
 
 
 # ============================================================
