@@ -17,8 +17,8 @@
           |
   combine_results -- 汇总所有检查结果，判定通过/不通过
           |
-  soft_check     -- 软性检查：字段所属类型/枚举值数量与语义/关键数据项/数据示例提示
-                    （依赖字段非空即执行，不影响检查结果列）
+  soft_check     -- 软性检查：仅对硬性检查通过的行执行字段所属类型/枚举值数量与语义/
+                    关键数据项/数据示例提示，不影响检查结果列
           |
   write_excel     -- 输出结果 Excel
           |
@@ -486,7 +486,7 @@ def combine_results_node(state: GraphState) -> dict:
 def soft_check_node(state: GraphState) -> dict:
     """执行软性检查，并将结果统一写入软性检查结果列。
 
-    仅检查依赖字段非空的记录，不依赖硬性检查是否通过：
+    仅检查硬性检查通过且依赖字段非空的记录：
       - 字段所属类型检查：非代码枚举类/标志类的通用语义类型提示；
       - 枚举值数量/语义提示：代码枚举类或标志类枚举值两项时由 LLM 判断；
       - 日期时间域类型提示：日期/时间/时间戳字段使用标准日期时间域；
@@ -495,6 +495,7 @@ def soft_check_node(state: GraphState) -> dict:
     """
     print("\n=== 步骤 5b/6: 软性检查（字段所属类型 + 枚举值 + 数据示例）===")
     rows = state["rows"]
+    rows = [r for r in rows if r["check_result"] == "通过"]
 
     rows_to_check = [
         {
