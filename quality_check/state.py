@@ -61,6 +61,7 @@ class BusinessMeaningItem(BaseModel):
     row_index: int = Field(description="行号，与输入数据中的row_index对应")
     is_meaningful: bool = Field(description="业务含义是否有效。true=有效，false=无效")
     reason: str = Field(description="判断过程和原因说明，需详细描述比较分析的过程")
+    reasoning: str = Field(description="完整的逐步推理过程：必须写明判断依据、比较分析与权衡的逻辑")
 
 
 class BusinessMeaningResult(BaseModel):
@@ -74,6 +75,7 @@ class EnumNormalizationItem(BaseModel):
     normalized: str = Field(description="规范化后的枚举值，格式为01-成功;02-失败")
     needs_normalization: bool = Field(description="是否需要规范化。如果原始格式已是标准格式则为false")
     has_codes: bool = Field(description="输入枚举值是否所有项都提供了代码。任一项缺少代码则为false")
+    reasoning: str = Field(description="完整的逐步推理过程：必须写明判断依据、比较分析与权衡的逻辑")
 
 
 class EnumNormalizationResult(BaseModel):
@@ -87,6 +89,7 @@ class FieldTypeCheckItem(BaseModel):
     is_correct: bool = Field(description="当前字段所属类型是否正确。true=正确，false=可能错误")
     correct_type: str = Field(description="判断应为的字段所属类型（六类之一）。is_correct为false时必填")
     reason: str = Field(description="判断过程和原因说明，需详细描述比较分析的过程")
+    reasoning: str = Field(description="完整的逐步推理过程：必须写明判断依据、比较分析与权衡的逻辑")
 
 
 class FieldTypeCheckResult(BaseModel):
@@ -99,6 +102,7 @@ class EnumAntonymItem(BaseModel):
     row_index: int = Field(description="行号，与输入数据中的row_index对应")
     is_antonym: bool = Field(description="枚举值的两项码值是否为反义词。true=反义词，false=不是")
     reason: str = Field(description="判断过程和原因说明，需详细描述比较分析的过程")
+    reasoning: str = Field(description="完整的逐步推理过程：必须写明判断依据、比较分析与权衡的逻辑")
 
 
 class EnumAntonymResult(BaseModel):
@@ -107,16 +111,11 @@ class EnumAntonymResult(BaseModel):
 
 
 class DataExampleCheckItem(BaseModel):
-    """单行数据示例语义检查结果。"""
+    """单行数据示例检查结果。"""
     row_index: int = Field(description="行号，与输入数据中的row_index对应")
-    has_real_meaning: bool = Field(description="数据示例是否有实际业务含义。true=有，false=无")
-    is_name_consistent: bool = Field(description="数据示例是否与字段中文名语义一致。true=一致，false=不一致或存在歧义")
-    is_type_consistent: bool = Field(description="数据示例是否与字段所属类型语义一致。true=一致，false=不一致或存在歧义")
-    suggested_field_type: str = Field(
-        default="",
-        description="当is_type_consistent为false时，结合数据示例给出的疑似更合理类型；否则留空",
-    )
-    reason: str = Field(description="数据示例含义、名称一致性、类型一致性的判断过程和原因说明")
+    is_valid: bool = Field(description="数据示例是否有效。true=有效，false=无效")
+    reason: str = Field(description="当is_valid为false时，说明数据示例无效的原因，否则留空")
+    reasoning: str = Field(description="完整的逐步推理过程：必须写明判断依据、比较分析与权衡的逻辑")
 
 
 class DataExampleCheckResult(BaseModel):

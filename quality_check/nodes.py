@@ -425,8 +425,7 @@ def soft_check_node(state: GraphState) -> dict:
     仅检查硬性检查通过的记录：
       - 字段所属类型检查：非代码枚举类/标志类的通用语义类型提示；
       - 枚举值数量/语义提示：代码枚举类或标志类枚举值两项时由 LLM 判断；
-      - 日期时间域类型提示：日期/时间/时间戳字段使用标准日期时间域；
-      - 数据示例语义提示：LLM 判断示例有效性、名称/类型一致性和关键数据项风险。
+      - 数据示例语义提示：LLM 判断示例有效性、示例和名称、含义、类型是否匹配。
     结果写入"软性检查结果"列，不影响"检查结果"列判定。
     """
     print("\n=== 软性检查（字段所属类型 + 枚举值 + 数据示例）===")
@@ -461,10 +460,10 @@ def soft_check_node(state: GraphState) -> dict:
             "字段中文名": r["field_name"],
             "业务定义": r["business_meaning"],
             "字段所属类型": r["field_type"],
-            "域类型": r["domain_type"],
             "数据示例": r["data_example"],
         }
         for r in rows
+        if r["field_type"] not in ("代码枚举类", "标志类")
     ]
 
     print(
@@ -566,24 +565,8 @@ def soft_check_node(state: GraphState) -> dict:
             notes.append("LLM返回重复结果，数据示例语义检查需人工复核")
         elif er is None and row["index"] in example_sent_indices:
             notes.append("LLM未返回该行结果，数据示例语义检查需人工复核")
-        elif er is not None:
-            if not er["has_real_meaning"]:
-                notes.append(f"数据示例疑似无实际业务含义：{er['reason']}")
-            else:
-                if not er["is_name_consistent"]:
-                    notes.append(
-                        f"数据示例与字段中文名可能不一致或存在歧义：{er['reason']}"
-                    )
-                if not er["is_type_consistent"]:
-                    suggested_type = er.get("suggested_field_type", "")
-                    if suggested_type:
-                        notes.append(
-                            f"根据数据示例，字段所属类型疑似{suggested_type}：{er['reason']}"
-                        )
-                    else:
-                        notes.append(
-                            f"数据示例与字段所属类型可能不一致：{er['reason']}"
-                        )
+        elif er is not None and not er["is_valid"]:
+            notes.append(f"数据示例存在问题：{er['reason']}")
         unique_notes = list(dict.fromkeys(notes))
         row["soft_check_result"] = "\n".join(
             f"{i}. {n}" for i, n in enumerate(unique_notes, 1)

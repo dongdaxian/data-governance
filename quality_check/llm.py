@@ -86,7 +86,10 @@ def check_business_meaning_batch(
     """
     data_str = json.dumps(rows, ensure_ascii=False, indent=2)
     user_text = BUSINESS_MEANING_USER.format(data=data_str)
-    return call_with_retry(llm, BusinessMeaningResult, BUSINESS_MEANING_SYSTEM, user_text)
+    return call_with_retry(
+        llm, BusinessMeaningResult, BUSINESS_MEANING_SYSTEM, user_text,
+        module="quality_check", label="业务含义检查",
+    )
 
 
 def check_business_meaning(
@@ -112,6 +115,7 @@ def check_business_meaning(
                 "row_index": item.row_index,
                 "is_meaningful": item.is_meaningful,
                 "reason": item.reason,
+                "reasoning": item.reasoning,
             })
 
     return all_results
@@ -136,7 +140,10 @@ def normalize_enum_batch(
     """
     data_str = json.dumps(rows, ensure_ascii=False, indent=2)
     user_text = ENUM_NORMALIZATION_USER.format(data=data_str)
-    return call_with_retry(llm, EnumNormalizationResult, ENUM_NORMALIZATION_SYSTEM, user_text)
+    return call_with_retry(
+        llm, EnumNormalizationResult, ENUM_NORMALIZATION_SYSTEM, user_text,
+        module="quality_check", label="枚举值规范化",
+    )
 
 
 def normalize_enum_values(
@@ -163,6 +170,7 @@ def normalize_enum_values(
                 "normalized": item.normalized,
                 "needs_normalization": item.needs_normalization,
                 "has_codes": item.has_codes,
+                "reasoning": item.reasoning,
             })
 
     return all_results
@@ -187,7 +195,10 @@ def check_field_type_batch(
     """
     data_str = json.dumps(rows, ensure_ascii=False, indent=2)
     user_text = FIELD_TYPE_CHECK_USER.format(data=data_str)
-    return call_with_retry(llm, FieldTypeCheckResult, FIELD_TYPE_CHECK_SYSTEM, user_text)
+    return call_with_retry(
+        llm, FieldTypeCheckResult, FIELD_TYPE_CHECK_SYSTEM, user_text,
+        module="quality_check", label="所属类型检查",
+    )
 
 
 def check_field_types(
@@ -214,6 +225,7 @@ def check_field_types(
                 "is_correct": item.is_correct,
                 "correct_type": item.correct_type,
                 "reason": item.reason,
+                "reasoning": item.reasoning,
             })
 
     return all_results
@@ -238,7 +250,10 @@ def check_enum_antonym_batch(
     """
     data_str = json.dumps(rows, ensure_ascii=False, indent=2)
     user_text = ENUM_ANTONYM_USER.format(data=data_str)
-    return call_with_retry(llm, EnumAntonymResult, ENUM_ANTONYM_SYSTEM, user_text)
+    return call_with_retry(
+        llm, EnumAntonymResult, ENUM_ANTONYM_SYSTEM, user_text,
+        module="quality_check", label="枚举反义词检查",
+    )
 
 
 def check_enum_antonyms(
@@ -264,6 +279,7 @@ def check_enum_antonyms(
                 "row_index": item.row_index,
                 "is_antonym": item.is_antonym,
                 "reason": item.reason,
+                "reasoning": item.reasoning,
             })
 
     return all_results
@@ -288,7 +304,10 @@ def check_data_example_batch(
     """
     data_str = json.dumps(rows, ensure_ascii=False, indent=2)
     user_text = DATA_EXAMPLE_CHECK_USER.format(data=data_str)
-    return call_with_retry(llm, DataExampleCheckResult, DATA_EXAMPLE_CHECK_SYSTEM, user_text)
+    return call_with_retry(
+        llm, DataExampleCheckResult, DATA_EXAMPLE_CHECK_SYSTEM, user_text,
+        module="quality_check", label="数据示例语义检查",
+    )
 
 
 def check_data_examples(
@@ -302,7 +321,7 @@ def check_data_examples(
         rows_data: [{"row_index": 0, "字段中文名": "...", ...}, ...]
 
     Returns:
-        [{"row_index": 0, "has_real_meaning": True, ...}, ...]
+        [{"row_index": 0, "is_valid": True, "reason": "..."}, ...]
     """
     all_results = []
 
@@ -312,11 +331,9 @@ def check_data_examples(
         for item in result.results:
             all_results.append({
                 "row_index": item.row_index,
-                "has_real_meaning": item.has_real_meaning,
-                "is_name_consistent": item.is_name_consistent,
-                "is_type_consistent": item.is_type_consistent,
-                "suggested_field_type": item.suggested_field_type,
+                "is_valid": item.is_valid,
                 "reason": item.reason,
+                "reasoning": item.reasoning,
             })
 
     return all_results

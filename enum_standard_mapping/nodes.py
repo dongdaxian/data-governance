@@ -211,7 +211,7 @@ def select_result_node(state: EnumMappingGraphState) -> dict:
     from standard_mapping.llm import select_standard
     llm = get_llm()
     try:
-        results = select_standard(llm, rows_to_select)
+        results = select_standard(llm, rows_to_select, log_module="enum_standard_mapping")
     except Exception as e:
         # LLM 失败兜底：相关行标记失败，保留候选明细供人工处理
         pending = {r["row_index"] for r in rows_to_select}

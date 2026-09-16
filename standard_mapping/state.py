@@ -69,6 +69,7 @@ class StandardSelectionItem(BaseModel):
     selected_std_name: str = Field(default="", description="选中的标准名称")
     extension_suggestion: str = Field(default="", description="扩展业务定义建议（仅当选择'复用已有标准但扩展业务定义'时填写）")
     reason: str = Field(description="判断过程和原因说明，需详细描述比较分析的过程")
+    reasoning: str = Field(description="完整的逐步推理过程：必须写明判断依据、对每个备选的匹配度分析与权衡的逻辑")
 
 
 class StandardSelectionResult(BaseModel):
