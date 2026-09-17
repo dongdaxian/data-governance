@@ -375,7 +375,7 @@ def combine_results_node(state: GraphState) -> dict:
         elif idx in semantic_map:
             sr = semantic_map[idx]
             row["is_meaningful"] = sr["is_meaningful"]
-            row["meaning_reason"] = sr["reason"]
+            row["meaning_reason"] = sr["reasoning"]
             if not sr["is_meaningful"]:
                 reasons.append(row["meaning_reason"])
         else:
@@ -523,7 +523,7 @@ def soft_check_node(state: GraphState) -> dict:
             notes.append("LLM未返回该行结果，字段所属类型检查需人工复核")
         elif r is not None and not r["is_correct"]:
             notes.append(
-                f"因为{r['reason']}，当前字段所属类型可能错误，"
+                f"因为{r['reasoning']}，当前字段所属类型可能错误，"
                 f"应为{r['correct_type']}，请联系业务确认"
             )
 
@@ -566,7 +566,7 @@ def soft_check_node(state: GraphState) -> dict:
         elif er is None and row["index"] in example_sent_indices:
             notes.append("LLM未返回该行结果，数据示例语义检查需人工复核")
         elif er is not None and not er["is_valid"]:
-            notes.append(f"数据示例存在问题：{er['reason']}")
+            notes.append(f"数据示例存在问题：{er['reasoning']}")
         unique_notes = list(dict.fromkeys(notes))
         row["soft_check_result"] = "\n".join(
             f"{i}. {n}" for i, n in enumerate(unique_notes, 1)

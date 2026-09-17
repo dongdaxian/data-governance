@@ -280,7 +280,7 @@ def select_standard_node(state: MappingGraphState) -> dict:
         row["mapping_result"] = r["selection"]
         row["selected_std_id"] = r["selected_std_id"]
         row["selected_std_name"] = r["selected_std_name"]
-        row["llm_reason"] = r["reason"]
+        row["llm_reason"] = r["reasoning"]
         if r["extension_suggestion"]:
             row["llm_reason"] += f" 扩展建议: {r['extension_suggestion']}"
         selection_results.append(r)

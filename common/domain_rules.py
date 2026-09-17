@@ -265,38 +265,39 @@ def check_length(example, domain_key, match):
             digits = digits.replace(sep, "")
 
         if domain_key == "date":
-            if len(digits) != 8:
-                return False, f"DATE应为8位日期数字（YYYYMMDD），实际{len(digits)}位"
+            # DATE: 6-8位YYYYMMDD（未补零时可能不足8位）
+            if not (6 <= len(digits) <= 8):
+                return False, f"DATE应为6-8位日期数字（YYYYMMDD），实际{len(digits)}位"
 
         elif domain_key == "time":
-            # TIME: 6位HHMMSS，可带毫秒
+            # TIME: 3-6位HHMMSS，可带毫秒（未补零时可能不足6位）
             if "." in digits:
                 parts = digits.split(".", 1)
                 main_part, ms_part = parts[0], parts[1]
-                if len(main_part) != 6:
-                    return False, f"TIME应为6位时间数字（HHMMSS），实际{len(main_part)}位"
+                if not (3 <= len(main_part) <= 6):
+                    return False, f"TIME应为3-6位时间数字（HHMMSS），实际{len(main_part)}位"
                 if not ms_part.isdigit():
                     return False, f"毫秒部分应为纯数字，实际'{ms_part}'"
             else:
-                if len(digits) != 6:
-                    return False, f"TIME应为6位时间数字（HHMMSS），实际{len(digits)}位"
+                if not (3 <= len(digits) <= 6):
+                    return False, f"TIME应为3-6位时间数字（HHMMSS），实际{len(digits)}位"
 
         elif domain_key in ("datetime", "timestamp"):
-            # DATETIME/TIMESTAMP: 14位YYYYMMDDHHmmss，可带毫秒
+            # DATETIME/TIMESTAMP: 9-14位YYYYMMDDHHmmss，可带毫秒（未补零时可能不足14位）
             if "." in digits:
                 parts = digits.split(".", 1)
                 main_part, ms_part = parts[0], parts[1]
                 if len(main_part) == 8:
                     return False, f"{domain_key.upper()}应为日期时间格式（YYYYMMDDHHmmss，14位），数据示例仅包含日期部分"
-                if len(main_part) != 14:
-                    return False, f"{domain_key.upper()}应为14位日期时间数字（YYYYMMDDHHmmss），实际{len(main_part)}位"
+                if not (9 <= len(main_part) <= 14):
+                    return False, f"{domain_key.upper()}应为9-14位日期时间数字（YYYYMMDDHHmmss），实际{len(main_part)}位"
                 if not ms_part.isdigit():
                     return False, f"毫秒部分应为纯数字，实际'{ms_part}'"
             else:
                 if len(digits) == 8:
                     return False, f"{domain_key.upper()}应为日期时间格式（YYYYMMDDHHmmss，14位），数据示例仅包含日期部分"
-                if len(digits) != 14:
-                    return False, f"{domain_key.upper()}应为14位日期时间数字（YYYYMMDDHHmmss），实际{len(digits)}位"
+                if not (9 <= len(digits) <= 14):
+                    return False, f"{domain_key.upper()}应为9-14位日期时间数字（YYYYMMDDHHmmss），实际{len(digits)}位"
 
     return True, ""
 

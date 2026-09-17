@@ -60,7 +60,6 @@ class BusinessMeaningItem(BaseModel):
     """单行业务含义检查结果。"""
     row_index: int = Field(description="行号，与输入数据中的row_index对应")
     is_meaningful: bool = Field(description="业务含义是否有效。true=有效，false=无效")
-    reason: str = Field(description="判断过程和原因说明，需详细描述比较分析的过程")
     reasoning: str = Field(description="完整的逐步推理过程：必须写明判断依据、比较分析与权衡的逻辑")
 
 
@@ -88,7 +87,6 @@ class FieldTypeCheckItem(BaseModel):
     row_index: int = Field(description="行号，与输入数据中的row_index对应")
     is_correct: bool = Field(description="当前字段所属类型是否正确。true=正确，false=可能错误")
     correct_type: str = Field(description="判断应为的字段所属类型（六类之一）。is_correct为false时必填")
-    reason: str = Field(description="判断过程和原因说明，需详细描述比较分析的过程")
     reasoning: str = Field(description="完整的逐步推理过程：必须写明判断依据、比较分析与权衡的逻辑")
 
 
@@ -101,7 +99,6 @@ class EnumAntonymItem(BaseModel):
     """单行代码枚举类/标志类枚举值反义词判断结果。"""
     row_index: int = Field(description="行号，与输入数据中的row_index对应")
     is_antonym: bool = Field(description="枚举值的两项码值是否为反义词。true=反义词，false=不是")
-    reason: str = Field(description="判断过程和原因说明，需详细描述比较分析的过程")
     reasoning: str = Field(description="完整的逐步推理过程：必须写明判断依据、比较分析与权衡的逻辑")
 
 
@@ -114,7 +111,6 @@ class DataExampleCheckItem(BaseModel):
     """单行数据示例检查结果。"""
     row_index: int = Field(description="行号，与输入数据中的row_index对应")
     is_valid: bool = Field(description="数据示例是否有效。true=有效，false=无效")
-    reason: str = Field(description="当is_valid为false时，说明数据示例无效的原因，否则留空")
     reasoning: str = Field(description="完整的逐步推理过程：必须写明判断依据、比较分析与权衡的逻辑")
 
 

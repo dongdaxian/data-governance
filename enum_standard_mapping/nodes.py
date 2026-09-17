@@ -254,7 +254,7 @@ def _apply_llm_result(row: FieldToMap, r: dict) -> None:
     selection = r["selection"]
     if selection == "新增标准":
         row["mapping_result"] = RESULT_NEW
-        row["llm_reason"] = r["reason"]
+        row["llm_reason"] = r["reasoning"]
         return
 
     # 定位选中标准所属的枚举代码候选
@@ -280,7 +280,7 @@ def _apply_llm_result(row: FieldToMap, r: dict) -> None:
     # 修改枚举代码：生成补充建议
     if op != OP_REUSE:
         row["enum_code_suggestion"] = _build_enum_code_suggestion(sel_cand)
-    row["llm_reason"] = r["reason"]
+    row["llm_reason"] = r["reasoning"]
     if r.get("extension_suggestion"):
         row["llm_reason"] += f" 扩展建议: {r['extension_suggestion']}"
 

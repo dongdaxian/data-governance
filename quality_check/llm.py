@@ -103,7 +103,7 @@ def check_business_meaning(
         rows_data: [{"row_index": 0, "字段中文名": "...", "业务含义": "..."}, ...]
 
     Returns:
-        [{"row_index": 0, "is_meaningful": True, "reason": "..."}, ...]
+        [{"row_index": 0, "is_meaningful": True, "reasoning": "..."}, ...]
     """
     all_results = []
 
@@ -114,7 +114,6 @@ def check_business_meaning(
             all_results.append({
                 "row_index": item.row_index,
                 "is_meaningful": item.is_meaningful,
-                "reason": item.reason,
                 "reasoning": item.reasoning,
             })
 
@@ -212,7 +211,7 @@ def check_field_types(
         rows_data: [{"row_index": 0, "中文字段名": "...", "业务定义": "...", "字段所属类型": "..."}, ...]
 
     Returns:
-        [{"row_index": 0, "is_correct": True, "correct_type": "", "reason": "..."}, ...]
+        [{"row_index": 0, "is_correct": True, "correct_type": "", "reasoning": "..."}, ...]
     """
     all_results = []
 
@@ -224,7 +223,6 @@ def check_field_types(
                 "row_index": item.row_index,
                 "is_correct": item.is_correct,
                 "correct_type": item.correct_type,
-                "reason": item.reason,
                 "reasoning": item.reasoning,
             })
 
@@ -267,7 +265,7 @@ def check_enum_antonyms(
         rows_data: [{"row_index": 0, "字段中文名": "...", "枚举值": "..."}, ...]
 
     Returns:
-        [{"row_index": 0, "is_antonym": True, "reason": "..."}, ...]
+        [{"row_index": 0, "is_antonym": True, "reasoning": "..."}, ...]
     """
     all_results = []
 
@@ -278,7 +276,6 @@ def check_enum_antonyms(
             all_results.append({
                 "row_index": item.row_index,
                 "is_antonym": item.is_antonym,
-                "reason": item.reason,
                 "reasoning": item.reasoning,
             })
 
@@ -321,7 +318,7 @@ def check_data_examples(
         rows_data: [{"row_index": 0, "字段中文名": "...", ...}, ...]
 
     Returns:
-        [{"row_index": 0, "is_valid": True, "reason": "..."}, ...]
+        [{"row_index": 0, "is_valid": True, "reasoning": "..."}, ...]
     """
     all_results = []
 
@@ -332,7 +329,6 @@ def check_data_examples(
             all_results.append({
                 "row_index": item.row_index,
                 "is_valid": item.is_valid,
-                "reason": item.reason,
                 "reasoning": item.reasoning,
             })
 
