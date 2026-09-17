@@ -309,8 +309,8 @@ def check_enum_type_consistency_node(state: GraphState) -> dict:
         if er is not None and not er["has_codes"]:
             continue
 
-        # 优先使用规范化后的枚举值，规范化结果缺失时回退原始枚举值
-        normalized = er["normalized"] if er else row["enum_values"]
+        # 优先使用规范化后的枚举值，规范化结果缺失（含未触发规范化）时回退原始枚举值
+        normalized = er["normalized"] if (er and er["normalized"]) else row["enum_values"]
         if not normalized:
             continue
 

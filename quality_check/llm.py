@@ -156,7 +156,8 @@ def normalize_enum_values(
         rows_data: [{"row_index": 0, "枚举值": "..."}, ...]
 
     Returns:
-        [{"row_index": 0, "normalized": "...", "needs_normalization": True}, ...]
+        [{"row_index": 0, "has_codes": True, "needs_normalization": True,
+          "normalized": "...", "reasoning": "..."}, ...]
     """
     all_results = []
 
@@ -166,9 +167,9 @@ def normalize_enum_values(
         for item in result.results:
             all_results.append({
                 "row_index": item.row_index,
-                "normalized": item.normalized,
-                "needs_normalization": item.needs_normalization,
                 "has_codes": item.has_codes,
+                "needs_normalization": item.needs_normalization,
+                "normalized": item.normalized,
                 "reasoning": item.reasoning,
             })
 

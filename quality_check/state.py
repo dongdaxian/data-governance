@@ -71,9 +71,9 @@ class BusinessMeaningResult(BaseModel):
 class EnumNormalizationItem(BaseModel):
     """单行枚举值规范化结果。"""
     row_index: int = Field(description="行号，与输入数据中的row_index对应")
-    normalized: str = Field(description="规范化后的枚举值，格式为01-成功;02-失败")
-    needs_normalization: bool = Field(description="是否需要规范化。如果原始格式已是标准格式则为false")
     has_codes: bool = Field(description="输入枚举值是否所有项都提供了代码。任一项缺少代码则为false")
+    needs_normalization: bool = Field(description="是否需要规范化（has_codes为true时判断，原始格式已是标准格式则为false）")
+    normalized: str = Field(description="规范化后的枚举值，格式为01-成功;02-失败，仅当needs_normalization为true时填写，否则为空字符串")
     reasoning: str = Field(description="完整的逐步推理过程：必须写明判断依据、比较分析与权衡的逻辑")
 
 

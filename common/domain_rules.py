@@ -320,12 +320,8 @@ def check_data_example(domain_type, data_example):
     if domain_key is None:
         return True, ""  # 无法解析的域类型，跳过校验
 
-    # 预处理：多个示例取第一个
+    # 直接使用完整数据示例进行校验
     example = str(data_example).strip()
-    for sep in [";", "；", ",", "，", "、"]:
-        if sep in example:
-            example = example.split(sep)[0].strip()
-            break
 
     if not example or example in INVALID_EXAMPLE_PLACEHOLDERS:
         return True, ""
