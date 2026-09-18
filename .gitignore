@@ -15,4 +15,4 @@ data/dictionary_mock/
 
 
 # LLM 调用日志（自动生成，按模块分区）
-
+logs/
