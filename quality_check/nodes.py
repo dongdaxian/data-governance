@@ -10,16 +10,16 @@
     |
   normalize_enum    -- LLM 规范化枚举值
     |
-  check_semantic    -- LLM 检查业务含义
-    |
   check_enum_type_consistency -- 类型与枚举值一致性检查：代码枚举类码值为"是/否"判为应申报标志类；
                                 标志类枚举值超过两项判为应申报代码枚举类
-          |
+    |
+  check_semantic    -- LLM 检查业务含义：仅检查前三步通过的行，输入附枚举值
+    |
   combine_results -- 汇总所有检查结果，判定通过/不通过
-          |
+    |
   soft_check     -- 软性检查：仅对硬性检查通过的行执行字段所属类型/枚举值数量与语义/
                     关键数据项/数据示例提示，不影响检查结果列
-          |
+    |
   write_excel     -- 输出结果 Excel
           |
   END
@@ -42,6 +42,28 @@ from quality_check.constants import (
 )
 from common.domain_rules import parse_domain_type, check_data_example, RE_CHINESE
 from common.llm_client import build_row_result_map
+
+
+# ============================================================
+# 业务含义检查过滤条件（check_semantic / combine_results 共用）
+# ============================================================
+
+def _enum_ok(row: RowData, enum_map: dict) -> bool:
+    """该行枚举规范化是否通过：无枚举值视为通过；有枚举值要求 LLM 结果存在且 has_codes=True。"""
+    if not row["enum_values"]:
+        return True
+    er = enum_map.get(row["index"])
+    return er is not None and er["has_codes"]
+
+
+def _should_check_semantic(row: RowData, enum_map: dict) -> bool:
+    """业务含义检查的过滤条件：业务定义非空 + 规则通过 + 类型/枚举一致性通过 + 枚举规范化通过。"""
+    return (
+        bool(row["business_meaning"])
+        and row["rule_passed"]
+        and not row["flag_issues"]
+        and _enum_ok(row, enum_map)
+    )
 
 
 # ============================================================
@@ -199,29 +221,38 @@ def check_rules_node(state: GraphState) -> dict:
 
 
 # ============================================================
-# LLM 业务含义检查（枚举值规范化之后执行）
+# LLM 业务含义检查（仅检查前三步通过的行）
 # ============================================================
 
 def check_semantic_node(state: GraphState) -> dict:
     """调用 LLM 批量检查业务含义是否有效。
 
-    仅跳过业务定义为空的行，与规则检查结果互不影响。
+    仅检查规则/类型一致性/枚举规范化都通过的行（_should_check_semantic），
+    输入附枚举值（规范化结果优先，回退原始输入）辅助模型理解字段语义。
     """
-    print("\n=== 步骤 3b/6: LLM 业务含义检查 ===")
+    print("\n=== 步骤 5/6: LLM 业务含义检查 ===")
     rows = state["rows"]
+    enum_map, _ = build_row_result_map(state.get("enum_results", []))
 
-    rows_to_check = [
-        {
+    rows_to_check = []
+    for r in rows:
+        if not _should_check_semantic(r, enum_map):
+            continue
+        er = enum_map.get(r["index"])
+        enum_value = ""
+        if er and er.get("normalized"):
+            enum_value = er["normalized"]
+        elif r["enum_values"]:
+            enum_value = r["enum_values"]
+        rows_to_check.append({
             "row_index": r["index"],
             "字段中文名": r["field_name"],
             "业务含义": r["business_meaning"],
-        }
-        for r in rows
-        if r["business_meaning"]
-    ]
+            "枚举值": enum_value,
+        })
 
     if not rows_to_check:
-        print("  没有需要检查的行（业务定义为空）")
+        print("  没有需要检查的行（前三步均通过的业务定义非空行）")
         return {"semantic_results": []}
 
     print(f"  共 {len(rows_to_check)} 行需要检查业务含义")
@@ -284,11 +315,8 @@ def check_enum_type_consistency_node(state: GraphState) -> dict:
       - 代码枚举类：码值有且仅有"是"和"否"时，应为标志类；
       - 标志类：枚举值超过两项时，应为代码枚举类。
     """
-    print("\n=== 步骤 4/6: 类型与枚举值一致性检查 ===")
+    print("\n=== 步骤 4/7: 类型与枚举值一致性检查 ===")
     rows = state["rows"]
-    semantic_map, duplicate_semantic_indices = build_row_result_map(
-        state.get("semantic_results", [])
-    )
     enum_map, duplicate_enum_indices = build_row_result_map(
         state.get("enum_results", [])
     )
@@ -297,8 +325,8 @@ def check_enum_type_consistency_node(state: GraphState) -> dict:
     for row in rows:
         row["flag_issues"] = []
 
-        # LLM 结果重复时不做互斥判断，交由汇总节点统一标记人工复核
-        if row["index"] in duplicate_semantic_indices or row["index"] in duplicate_enum_indices:
+        # 枚举值规范化结果重复时不做互斥判断，交由汇总节点统一标记人工复核
+        if row["index"] in duplicate_enum_indices:
             continue
 
         if row["field_type"] not in ("代码枚举类", "标志类") or not row["enum_values"]:
@@ -347,7 +375,7 @@ def check_enum_type_consistency_node(state: GraphState) -> dict:
 
 def combine_results_node(state: GraphState) -> dict:
     """汇总规则检查、业务含义检查、类型一致性检查、枚举规范化的结果，判定通过/不通过。"""
-    print("\n=== 步骤 5/6: 汇总检查结果 ===")
+    print("\n=== 步骤 6/7: 汇总检查结果 ===")
     rows = state["rows"]
 
     semantic_map, duplicate_semantic_indices = build_row_result_map(
@@ -383,11 +411,15 @@ def combine_results_node(state: GraphState) -> dict:
             if not row["business_meaning"]:
                 row["is_meaningful"] = True
                 row["meaning_reason"] = ""
-            else:
-                # 业务定义非空但 LLM 未返回该行结果
+            elif _should_check_semantic(row, enum_map):
+                # 应被语义检查但 LLM 未返回该行结果
                 row["is_meaningful"] = True
                 row["meaning_reason"] = "LLM未返回该行结果"
                 reasons.append("LLM未返回该行结果，业务含义检查需人工复核")
+            else:
+                # 因硬性问题被预期跳过语义检查，不追加提示
+                row["is_meaningful"] = True
+                row["meaning_reason"] = ""
 
         # 枚举值规范化结果
         if idx in duplicate_enum_indices:
@@ -659,6 +691,6 @@ def _get_enum_duplicate_notes(enum_values: str) -> list[str]:
 
 def write_excel_node(state: GraphState) -> dict:
     """将检查结果写入输出 Excel。"""
-    print("\n=== 步骤 6/6: 写入结果 Excel ===")
+    print("\n=== 步骤 7/7: 写入结果 Excel ===")
     write_excel(state["output_file"], state["rows"], state["input_file"])
     return {}

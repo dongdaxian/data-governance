@@ -150,13 +150,14 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
 
     """将检查结果写入 Excel。
 
-    完整复制输入文件作为输出（保留全部原始列、数据、合并表头和格式），
+    完整复制输入文件作为输出（保留全部原始列、数据、合并表头和格式）。
 
-    按第2行列名定位"枚举值(选填)/检查结果/说明"三列，从第3行起填入：
+    输入按干净申请单处理：第2行定位"枚举值(选填)/检查结果/说明"列，
+    缺失的结果列自动追加到末尾；第1行为结果列区域新建合并表头"质量检查结果"。
 
-    枚举值列直接写入规范化后的枚举值（无规范化结果时保留原值）；
-
-    末尾追加"软性检查结果"列，写入字段所属类型/枚举值唯一性软性提醒。
+    数据从第3行起按 index 升序填入：
+      枚举值列写规范化后的枚举值（无规范化结果时保留原值）；
+      检查结果/说明/软性检查结果列写各判定结果。
 
     """
 
@@ -173,20 +174,31 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
     wb = load_workbook(file_path)
     ws = wb.active
 
+    target_cols = [enum_col, COL_CHECK_RESULT, COL_FAIL_REASON, COL_SOFT_CHECK_RESULT]
     col_index: dict[str, int] = {}
     for col in range(1, ws.max_column + 1):
         name = _safe_str(ws.cell(row=2, column=col).value)
-        if name in (enum_col, COL_CHECK_RESULT, COL_FAIL_REASON):
+        if name in target_cols:
             col_index[name] = col
 
-    missing = [n for n in (enum_col, COL_CHECK_RESULT, COL_FAIL_REASON)
-               if n not in col_index]
-    if missing:
-        raise ValueError(
-            f"输入Excel缺少必填列: {missing}，请检查模板是否与申请单格式一致。"
-        )
+    # 3. 追加缺失的结果列（固定顺序，紧接现有列之后）
+    next_col = ws.max_column + 1
+    for name in target_cols:
+        if name not in col_index:
+            col_index[name] = next_col
+            ws.cell(row=2, column=next_col, value=name)
+            next_col += 1
 
-    # 3. 从第3行起按 index 升序逐行填入结果
+    # 4. 第1行：为结果列区域（检查结果~软性检查结果）新建合并表头"质量检查结果"
+    first_result_col = col_index[COL_CHECK_RESULT]
+    last_result_col = col_index[COL_SOFT_CHECK_RESULT]
+    ws.merge_cells(
+        start_row=1, start_column=first_result_col,
+        end_row=1, end_column=last_result_col,
+    )
+    ws.cell(row=1, column=first_result_col, value="质量检查结果")
+
+    # 5. 从第3行起按 index 升序逐行填入结果
     sorted_rows = sorted(rows, key=lambda r: r["index"])
     for r in sorted_rows:
         excel_row = 3 + r["index"]
@@ -196,27 +208,8 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
         )
         ws.cell(row=excel_row, column=col_index[COL_CHECK_RESULT], value=r["check_result"])
         ws.cell(row=excel_row, column=col_index[COL_FAIL_REASON], value=r["fail_reason"])
-
-    # 4. 追加"软性检查结果"列（字段所属类型/枚举值唯一性提醒，位于最后一个结果列之后）
-    type_col = ws.max_column + 1
-    ws.cell(row=2, column=type_col, value=COL_SOFT_CHECK_RESULT)
-
-    # 若第1行存在覆盖原结果列的合并表头（如"数管反馈"），将其右边界扩展一列，
-    # 使新列并入该表头组；模板无此合并区时跳过
-    last_result_col = col_index[COL_FAIL_REASON]
-    for mr in list(ws.merged_cells.ranges):
-        if mr.min_row == 1 and mr.max_row == 1 and mr.max_col == last_result_col:
-            ws.unmerge_cells(str(mr))
-            ws.merge_cells(
-                start_row=1, start_column=mr.min_col,
-                end_row=1, end_column=type_col,
-            )
-            break
-
-    for r in sorted_rows:
-        excel_row = 3 + r["index"]
         ws.cell(
-            row=excel_row, column=type_col,
+            row=excel_row, column=col_index[COL_SOFT_CHECK_RESULT],
             value=r.get("soft_check_result", ""),
         )
 
