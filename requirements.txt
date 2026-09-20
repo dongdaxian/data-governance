@@ -1,4 +1,4 @@
-﻿langgraph>=0.2.0
+langgraph>=0.2.0
 langchain-openai>=0.1.0
 langchain-core>=0.2.0
 openpyxl>=3.1.0
@@ -14,5 +14,4 @@ sentence-transformers>=3.0.0
 #   pip install torch --index-url https://download.pytorch.org/whl/cu121
 # 若无 GPU，直接 pip install torch 即可（CPU 版）
 torch>=2.0.0
-pyarrow>=15.0.0
 transformers>=4.40.0
