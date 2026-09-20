@@ -4,10 +4,11 @@
 
 > 你只需要跑 `scripts/vector_build.py`，不涉及 LLM 调用。
 
-### 1. 安装依赖
+### 1. 安装依赖（Python 3.11）
 
 ```bash
-pip install -r requirements.txt
+conda env create -f env.lock.yml
+conda activate data-governance
 ```
 
 ### 2. 配置 .env（项目根目录）
@@ -75,4 +76,7 @@ for r in results:
 
 字段：standard_id（主键）、name_text、name_dense(1024)、name_sparse(BM25)、meaning_text、meaning_dense(1024)、meaning_sparse(BM25)。
 
-检索逻辑：稠密 top10（HNSW+COSINE，名称+含义各 0.5）+ 稀疏 top10（BM25，名称+含义各 0.5）-> 合并去重，最多 20 条。
+检索逻辑（混合检索，三路并集去重）：
+- 稠密主路：name_dense + meaning_dense 各取 top_k×5 子窗口，按名称 0.6 / 含义 0.4 权重合并得分后取 top_k（HNSW+COSINE）
+- 稀疏补充路：名称 BM25 取 top_k、含义 BM25 取 top_k，两路独立，召回稠密路漏掉的字面强匹配标准
+- 三路按 standard_id 去重并集（稠密优先，稀疏补充漏检项）
