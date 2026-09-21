@@ -475,16 +475,22 @@ def soft_check_node(state: GraphState) -> dict:
         if r["field_type"] not in ("代码枚举类", "标志类")
     ]
 
-    antonym_rows = [
-        {
+    antonym_rows = []
+    for r in rows:
+        if r["field_type"] not in ("代码枚举类", "标志类"):
+            continue
+        enum_str = r["normalized_enum"] or r["enum_values"]
+        if _enum_item_count(enum_str) != 2:
+            continue
+        values = _extract_code_values(enum_str)
+        if len(values) < 2:
+            continue
+        antonym_rows.append({
             "row_index": r["index"],
             "字段中文名": r["field_name"],
-            "枚举值": r["normalized_enum"] or r["enum_values"],
-        }
-        for r in rows
-        if r["field_type"] in ("代码枚举类", "标志类")
-        and _enum_item_count(r["normalized_enum"] or r["enum_values"]) == 2
-    ]
+            "词语1": values[0],
+            "词语2": values[1],
+        })
 
     example_rows = [
         {
@@ -626,6 +632,23 @@ def _enum_item_count(enum_values) -> int:
     if not enum_values:
         return 0
     return len([p for p in str(enum_values).split(";") if p.strip()])
+
+
+def _extract_code_values(enum_values) -> list[str]:
+    """将枚举值拆分为码值列表（"代码-码值;代码-码值" -> ["码值1", "码值2"]）。
+
+    按分号拆分，每项含"-"时取第一个"-"之后的部分作为码值，否则整项即为码值。
+    """
+    values = []
+    for item in str(enum_values).split(";"):
+        item = item.strip()
+        if not item:
+            continue
+        if "-" in item:
+            values.append(item.partition("-")[2].strip())
+        else:
+            values.append(item)
+    return values
 
 
 def _get_key_item_notes(row: RowData) -> list[str]:

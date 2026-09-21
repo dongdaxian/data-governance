@@ -238,11 +238,11 @@ def check_enum_antonym_batch(
     llm: ChatOpenAI,
     rows: list[dict],
 ) -> EnumAntonymResult:
-    """调用 LLM 批量判断枚举值两项码值是否反义词。
+    """调用 LLM 批量判断枚举值两项词语是否互补二元对立。
 
     Args:
         llm: LLM 实例
-        rows: [{"row_index": 0, "字段中文名": "...", "枚举值": "01-通过;02-不通过"}, ...]
+        rows: [{"row_index": 0, "字段中文名": "...", "词语1": "通过", "词语2": "不通过"}, ...]
 
     Returns:
         EnumAntonymResult
@@ -259,11 +259,11 @@ def check_enum_antonyms(
     llm: ChatOpenAI,
     rows_data: list[dict],
 ) -> list[dict]:
-    """并发分批调用 LLM 判断枚举值反义词，返回扁平结果列表。
+    """并发分批调用 LLM 判断枚举值两项码值是否互补二元对立，返回扁平结果列表。
 
     Args:
         llm: LLM 实例
-        rows_data: [{"row_index": 0, "字段中文名": "...", "枚举值": "..."}, ...]
+        rows_data: [{"row_index": 0, "字段中文名": "...", "枚举值1": "通过", "枚举值2": "不通过"}, ...]
 
     Returns:
         [{"row_index": 0, "is_antonym": True, "reasoning": "..."}, ...]

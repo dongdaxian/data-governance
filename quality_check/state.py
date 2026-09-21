@@ -96,9 +96,9 @@ class FieldTypeCheckResult(BaseModel):
 
 
 class EnumAntonymItem(BaseModel):
-    """单行代码枚举类/标志类枚举值反义词判断结果。"""
+    """单行代码枚举类/标志类枚举值互补二元对立判断结果。"""
     row_index: int = Field(description="行号，与输入数据中的row_index对应")
-    is_antonym: bool = Field(description="枚举值的两项码值是否为反义词。true=反义词，false=不是")
+    is_antonym: bool = Field(description="两个词语是否构成互补的二元对立（true=构成，false=不构成）")
     reasoning: str = Field(description="完整的逐步推理过程：必须写明判断依据、比较分析与权衡的逻辑")
 
 
