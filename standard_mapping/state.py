@@ -20,7 +20,8 @@ class CandidateStandard(TypedDict):
     domain_type: str      # 域类型（如 an..(20)）
     data_example: str     # 数据示例
     dense_score: NotRequired[float]   # 稠密检索得分（候选明细输出用）
-    sparse_score: NotRequired[float]  # 稀疏检索得分
+    name_sparse_score: NotRequired[float]  # 名称稀疏（BM25 on 标准名）得分
+    meaning_sparse_score: NotRequired[float]  # 业务含义稀疏（BM25 on 业务定义）得分
     source: NotRequired[str]          # 检索来源: dense/sparse/both
 
 

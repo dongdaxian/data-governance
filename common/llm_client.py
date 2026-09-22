@@ -65,6 +65,11 @@ def _append_log(module: str, text: str) -> None:
         print(f"  [WARNING] 写入 LLM 日志失败: {e}")
 
 
+def append_module_log(module: str, text: str) -> None:
+    """向模块日志文件追加内容（供非 LLM 调用方复用同一模块日志文件）。"""
+    _append_log(module, text)
+
+
 def _result_to_json(result) -> str:
     """将 LLM 结构化结果序列化为便于阅读的 JSON 字符串。"""
     if hasattr(result, "model_dump_json"):

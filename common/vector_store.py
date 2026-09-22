@@ -473,7 +473,7 @@ def search(query_name, query_meaning, top_k=10, field_type=None, collection_name
     Returns:
         合并去重后的结果列表，每条含:
         standard_id, name_text, meaning_text,
-        dense_score, sparse_score,
+        dense_score, name_sparse_score, meaning_sparse_score,
         source("dense"/"name_sparse"/"meaning_sparse"/"sparse_both"/"both")
     """
 
@@ -576,13 +576,14 @@ def search(query_name, query_meaning, top_k=10, field_type=None, collection_name
             "name_text": info["name_text"],
             "meaning_text": info["meaning_text"],
             "dense_score": round(info["score"], 4),
-            "sparse_score": 0.0,
+            "name_sparse_score": 0.0,
+            "meaning_sparse_score": 0.0,
             "source": "dense",
         }
 
     for sid, score, entity in name_sparse_top:
         if sid in results:
-            results[sid]["sparse_score"] += round(score, 4)
+            results[sid]["name_sparse_score"] = round(score, 4)
             if results[sid]["source"] == "dense":
                 results[sid]["source"] = "both"
             else:
@@ -593,13 +594,14 @@ def search(query_name, query_meaning, top_k=10, field_type=None, collection_name
                 "name_text": entity["name_text"],
                 "meaning_text": entity["meaning_text"],
                 "dense_score": 0.0,
-                "sparse_score": round(score, 4),
+                "name_sparse_score": round(score, 4),
+                "meaning_sparse_score": 0.0,
                 "source": "name_sparse",
             }
 
     for sid, score, entity in meaning_sparse_top:
         if sid in results:
-            results[sid]["sparse_score"] += round(score, 4)
+            results[sid]["meaning_sparse_score"] = round(score, 4)
             cur = results[sid]["source"]
             if cur == "dense":
                 results[sid]["source"] = "both"
@@ -611,7 +613,8 @@ def search(query_name, query_meaning, top_k=10, field_type=None, collection_name
                 "name_text": entity["name_text"],
                 "meaning_text": entity["meaning_text"],
                 "dense_score": 0.0,
-                "sparse_score": round(score, 4),
+                "name_sparse_score": 0.0,
+                "meaning_sparse_score": round(score, 4),
                 "source": "meaning_sparse",
             }
 

@@ -10,6 +10,7 @@ import shutil
 
 import pandas as pd
 from openpyxl import load_workbook
+from openpyxl.styles import Alignment
 
 from standard_mapping.constants import (
     INPUT_COLUMNS,
@@ -93,19 +94,10 @@ def read_excel(file_path: str) -> list[FieldToMap]:
 
 
 def _format_candidates(candidates) -> str:
-    """将候选标准格式化为明细文本（仅测试输出用）。"""
+    """将候选标准格式化为文本：每行"标准编号 标准名"，标准之间用换行分隔。"""
     if not candidates:
         return ""
-    parts = []
-    for c in candidates:
-        sid = c["std_id"]
-        sname = c["std_name"]
-        stype = c["std_type"]
-        dtype = c["domain_type"]
-        ds = c.get("dense_score", 0.0)
-        ss = c.get("sparse_score", 0.0)
-        parts.append(f"{sid} {sname}({stype}/{dtype},dense={ds},sparse={ss})")
-    return "; ".join(parts)
+    return "\n".join(f"{c['std_id']} {c['std_name']}" for c in candidates)
 
 
 def write_excel(
@@ -158,7 +150,11 @@ def write_excel(
             ws.cell(row=excel_row, column=col_offset + 2, value=r["selected_std_name"])
             ws.cell(row=excel_row, column=col_offset + 3, value=r["llm_reason"])
             if include_candidates:
-                ws.cell(row=excel_row, column=col_offset + 4, value=_format_candidates(r["candidates"]))
+                cell = ws.cell(
+                    row=excel_row, column=col_offset + 4,
+                    value=_format_candidates(r["candidates"]),
+                )
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
         else:
             # 被过滤的行（如代码枚举类），结果列填空
             for i in range(len(result_cols)):

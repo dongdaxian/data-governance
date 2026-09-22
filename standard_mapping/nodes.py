@@ -21,7 +21,7 @@ from standard_mapping.constants import NON_ENUM_TYPES
 from common.domain_rules import check_data_example
 from common.vector_store import search as vector_search, translate_milvus_error
 from common.exceptions import NonRetryableError
-from common.llm_client import build_row_result_map
+from common.llm_client import build_row_result_map, append_module_log
 from common.dictionary_store import (
     get_by_ids as get_standards_by_ids,
 )
@@ -76,7 +76,8 @@ def fetch_candidates(field_name: str, business_meaning: str, field_type: str) ->
             domain_type=r["domain_type"],
             data_example=r["data_example"],
             dense_score=score.get("dense_score", 0.0),
-            sparse_score=score.get("sparse_score", 0.0),
+            name_sparse_score=score.get("name_sparse_score", 0.0),
+            meaning_sparse_score=score.get("meaning_sparse_score", 0.0),
             source=score.get("source", ""),
         ))
     return candidates
@@ -125,6 +126,19 @@ def load_and_fetch_node(state: MappingGraphState) -> dict:
             )
             row["candidate_fetch_error"] = ""
             consecutive_config_errors = 0
+            # 打印候选得分明细到运行日志，并写入模块日志文件（排查检索质量用）
+            log_lines = []
+            for c in row["candidates"]:
+                line = (
+                    f"  行 {row['index']} 候选 {c['std_id']} {c['std_name']} | "
+                    f"dense={c.get('dense_score', 0.0)} "
+                    f"name_sparse={c.get('name_sparse_score', 0.0)} "
+                    f"meaning_sparse={c.get('meaning_sparse_score', 0.0)}"
+                )
+                print(line)
+                log_lines.append(line)
+            if log_lines:
+                append_module_log("standard_mapping", "\n".join(log_lines) + "\n")
         except Exception as e:
             row["candidates"] = []
             translated = translate_milvus_error(e)

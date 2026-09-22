@@ -40,7 +40,7 @@ MODULES = {
     },
     "standard_mapping": {
         "command": "standard-mapping",
-        # 标准答案 output.xlsx 含"候选标准及得分"列，需带该参数生成
+        # 标准答案 output.xlsx 含"候选标准"列，需带该参数生成
         "extra_args": ["--include-candidates"],
         # 只比对判定结论列，其余列（LLM 自由文本、浮点得分等）不参与比对
         "compare_columns": ["落标结果"],

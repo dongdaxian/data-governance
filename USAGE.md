@@ -59,7 +59,7 @@ from common.vector_store import search
 # field_type 决定在哪个 collection 里搜
 results = search("客户号", "客户的唯一编号", top_k=10, field_type="编码类")
 for r in results:
-    print(r["standard_id"], r["name_text"], r["dense_score"], r["sparse_score"], r["source"])
+    print(r["standard_id"], r["name_text"], r["dense_score"], r["name_sparse_score"], r["meaning_sparse_score"], r["source"])
 ```
 
 ## 集合结构
