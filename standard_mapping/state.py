@@ -37,6 +37,8 @@ class FieldToMap(TypedDict):
     # load_and_fetch 节点产出
     candidates: list[CandidateStandard]  # 备选标准列表
     candidate_fetch_error: str  # 候选检索错误信息（检索失败时填充）
+    rewritten_field_name: str  # 字段名改写结果（标志类+非"是/否"枚举经 LLM 改写；未改写行=原始名）
+    rewritten_business_meaning: str  # 业务定义改写结果（同上；未改写行=原始业务定义）
 
     # check_domain 节点产出
     domain_check_details: str  # 域检查详情
@@ -75,3 +77,16 @@ class StandardSelectionItem(BaseModel):
 class StandardSelectionResult(BaseModel):
     """批量标准选择结果。"""
     results: list[StandardSelectionItem] = Field(description="每行的标准选择结果列表")
+
+
+class FieldNameRewriteItem(BaseModel):
+    """单条字段名改写结果。"""
+    row_index: int = Field(description="行号，与输入数据中的row_index对应")
+    rewritten_field_name: str = Field(description="改写后的字段中文名，如将'模板状态'改写为'模板启用标志'")
+    rewritten_business_meaning: str = Field(description="改写后的业务定义，语义贴合枚举值，如将'模板启用或停用状态'改写为'标识模板是否处于启用状态'")
+    reasoning: str = Field(description="简要说明改写依据（如参考了哪些枚举值）")
+
+
+class FieldNameRewriteResult(BaseModel):
+    """批量字段名改写结果。"""
+    results: list[FieldNameRewriteItem] = Field(description="每行的字段名改写结果列表")

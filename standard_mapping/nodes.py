@@ -16,8 +16,9 @@
 
 from standard_mapping.state import MappingGraphState, FieldToMap, CandidateStandard
 from standard_mapping.excel_utils import read_excel, write_excel
-from standard_mapping.llm import get_llm, select_standard
+from standard_mapping.llm import get_llm, select_standard, rewrite_field_names
 from standard_mapping.constants import NON_ENUM_TYPES
+from standard_mapping.preprocess import preprocess_field_name
 from common.domain_rules import check_data_example
 from common.vector_store import search as vector_search, translate_milvus_error
 from common.exceptions import NonRetryableError
@@ -83,6 +84,140 @@ def fetch_candidates(field_name: str, business_meaning: str, field_type: str) ->
     return candidates
 
 
+def fetch_candidates_preprocessed(
+    field_name: str, business_meaning: str, field_type: str, row_index: int
+) -> list[CandidateStandard]:
+    """预处理（近义词扩展）后用多个查询名分别检索，按标准编号合并去重。
+
+    合并规则：
+    - 以 standard_id 为键，首次出现的条目作为基座（保持原查询名结果靠前）。
+    - dense_score / name_sparse_score / meaning_sparse_score 逐项取各查询名下的最大值。
+    - source 组装为可读文本，记录每条候选被哪些查询名的哪些检索路召回，
+      如"客户编号dense召回；客户号dense、name_sparse召回"。
+    """
+    search_names = preprocess_field_name(field_name)
+
+    # 得分>0 判定候选在某个查询名下命中了哪些检索路
+    score_path_fields = (
+        ("dense_score", "dense"),
+        ("name_sparse_score", "name_sparse"),
+        ("meaning_sparse_score", "meaning_sparse"),
+    )
+
+    merged: dict[str, CandidateStandard] = {}
+    hit_parts: dict[str, list[str]] = {}  # std_id -> ["客户编号dense召回", "客户号name_sparse召回", ...]
+    for name in search_names:
+        for cand in fetch_candidates(name, business_meaning, field_type):
+            sid = cand["std_id"]
+            paths = [p for sf, p in score_path_fields if cand.get(sf, 0.0) > 0.0]
+            if paths:
+                hit_parts.setdefault(sid, []).append(f"{name}{'、'.join(paths)}召回")
+
+            if sid not in merged:
+                merged[sid] = cand
+                continue
+            existing = merged[sid]
+            for score_field, _ in score_path_fields:
+                if cand.get(score_field, 0.0) > existing.get(score_field, 0.0):
+                    existing[score_field] = cand.get(score_field, 0.0)
+
+    for sid, cand in merged.items():
+        cand["source"] = "；".join(hit_parts.get(sid, []))
+    return list(merged.values())
+
+
+def _build_retrieval_field_log(row: FieldToMap) -> str:
+    """组装检索字段说明：先输出原始字段，再说明预处理（改写/近义词扩展）结果。
+
+    例：
+      - 无预处理：  行 24 检索字段: '开户日期'
+      - 近义词扩展：行 28 检索字段: '客户编号'，预处理（近义词）扩展为 ['客户编号', '客户号']
+      - LLM 改写：  行 63 检索字段: '模板状态'，预处理（改写）将字段名改写为 '模板启用标志'
+    """
+    idx = row["index"]
+    original = row["field_name"]
+    used = row["rewritten_field_name"]
+    parts = [f"  行 {idx} 检索字段: '{original}'"]
+    if used != original:
+        parts.append(f"预处理（改写）将字段名改写为 '{used}'")
+    search_names = preprocess_field_name(used)
+    if len(search_names) > 1:
+        parts.append(f"预处理（近义词）扩展为 {search_names}")
+    return "，".join(parts)
+
+
+# ============================================================
+# 标志类字段名改写（检索前预处理，LLM 改写）
+# ============================================================
+
+def _parse_enum_values(enum_text: str) -> list[tuple[str, str]]:
+    """解析"码-值;码-值"为 (码, 值) 列表；无"-"时整段作为值。"""
+    pairs = []
+    for part in str(enum_text or "").split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            code, value = part.split("-", 1)
+            pairs.append((code.strip(), value.strip()))
+        else:
+            pairs.append(("", part))
+    return pairs
+
+
+def _needs_field_name_rewrite(field_type: str, enum_values: str) -> bool:
+    """标志类 + 枚举值非空 + 枚举值不是恰为{是,否}（标准二值标志）才需要改写。"""
+    if field_type != "标志类":
+        return False
+    values = [v for _, v in _parse_enum_values(enum_values)]
+    if not values:
+        return False
+    return set(values) != {"是", "否"}
+
+
+def rewrite_flag_fields(rows: list[FieldToMap]) -> None:
+    """对标志类且枚举值非'是/否'的字段做字段名/业务定义改写（预处理）。
+
+    - 命中行：row["rewritten_field_name"] / row["rewritten_business_meaning"] = 改写结果，
+      并日志记录 改写前->后（含枚举值）。
+    - 未命中/LLM 缺失行：回退原始名/原始业务定义。
+    - LLM 调用整体失败：warning 后全部回退原始值，不中断流程。
+    """
+    target = [r for r in rows if _needs_field_name_rewrite(r["field_type"], r["enum_values"])]
+    if not target:
+        return
+    llm = get_llm()
+    try:
+        results = rewrite_field_names(llm, [{
+            "row_index": r["index"],
+            "field_name": r["field_name"],
+            "business_meaning": r["business_meaning"],
+            "enum_values": r["enum_values"],
+            "data_example": r["data_example"],
+        } for r in target])
+        result_map, duplicate_indices = build_row_result_map(results)
+        for r in target:
+            if r["index"] in duplicate_indices or r["index"] not in result_map:
+                print(f"  [WARNING] 行 {r['index']} 字段名改写结果缺失/重复，使用原始值")
+                continue
+            item = result_map[r["index"]]
+            rewritten_name = item.get("rewritten_field_name", "").strip()
+            rewritten_meaning = item.get("rewritten_business_meaning", "").strip()
+            if not rewritten_name and not rewritten_meaning:
+                continue
+            if rewritten_name:
+                r["rewritten_field_name"] = rewritten_name
+            if rewritten_meaning:
+                r["rewritten_business_meaning"] = rewritten_meaning
+            msg = (f"  行 {r['index']} 字段名改写: '{r['field_name']}' -> '{r['rewritten_field_name']}' | "
+                   f"业务定义改写: '{r['business_meaning']}' -> '{r['rewritten_business_meaning']}' "
+                   f"（枚举值: {r['enum_values']}）")
+            print(msg)
+            append_module_log("standard_mapping", msg + "\n")
+    except Exception as e:
+        print(f"  [WARNING] 字段名改写 LLM 调用失败，全部使用原始字段名/业务定义: {e}")
+
+
 # ============================================================
 # 域类型冲突检测（正则规则）
 # ============================================================
@@ -117,15 +252,25 @@ def load_and_fetch_node(state: MappingGraphState) -> dict:
     if enum_count > 0:
         print(f"  筛选: 排除 {enum_count} 行代码枚举类字段，保留 {len(rows)} 行非枚举类字段")
 
+    # 字段名/业务定义改写（预处理）：默认原始值，标志类+非"是/否"枚举经 LLM 改写
+    for row in rows:
+        row["rewritten_field_name"] = row["field_name"]
+        row["rewritten_business_meaning"] = row["business_meaning"]
+    rewrite_flag_fields(rows)
+
     # 向量检索 + 字典回填获取备选标准（连续不可重试错误熔断）
     consecutive_config_errors = 0
     for row in rows:
         try:
-            row["candidates"] = fetch_candidates(
-                row["field_name"], row["business_meaning"], row["field_type"]
+            row["candidates"] = fetch_candidates_preprocessed(
+                row["rewritten_field_name"], row["rewritten_business_meaning"], row["field_type"], row["index"]
             )
             row["candidate_fetch_error"] = ""
             consecutive_config_errors = 0
+            # 输出当前检索字段说明（原始字段 + 预处理结果），候选明细之前
+            field_log = _build_retrieval_field_log(row)
+            print(field_log)
+            append_module_log("standard_mapping", field_log + "\n")
             # 打印候选得分明细到运行日志，并写入模块日志文件（排查检索质量用）
             log_lines = []
             for c in row["candidates"]:
@@ -248,8 +393,8 @@ def select_standard_node(state: MappingGraphState) -> dict:
         else:
             rows_to_select.append({
                 "row_index": row["index"],
-                "field_name": row["field_name"],
-                "business_meaning": row["business_meaning"],
+                "field_name": row["rewritten_field_name"],
+                "business_meaning": row["rewritten_business_meaning"],
                 "data_example": row["data_example"],
                 "candidates": [
                     {

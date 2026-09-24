@@ -81,6 +81,8 @@ def read_excel(file_path: str) -> list[FieldToMap]:
             # 初始化结果字段
             candidates=[],
             candidate_fetch_error="",
+            rewritten_field_name="",
+            rewritten_business_meaning="",
             domain_check_details="",
             mapping_result="",
             selected_std_id="",
