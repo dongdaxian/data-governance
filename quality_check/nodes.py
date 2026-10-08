@@ -238,7 +238,8 @@ def check_semantic_node(state: GraphState) -> dict:
     """调用 LLM 批量检查业务含义是否有效。
 
     仅检查规则/类型一致性/枚举规范化都通过的行（_should_check_semantic），
-    输入附枚举值（规范化结果优先，回退原始输入）辅助模型理解字段语义。
+    输入附枚举值（规范化结果优先，回退原始输入）辅助模型理解字段语义；
+    中文表名仅在 LLM 输入层拼接到业务含义前，不修改原始数据和输出 Excel。
     """
     print("\n=== 步骤 5/6: LLM 业务含义检查 ===")
     rows = state["rows"]
@@ -254,11 +255,15 @@ def check_semantic_node(state: GraphState) -> dict:
             enum_value = er["normalized"]
         elif r["enum_values"]:
             enum_value = r["enum_values"]
+        business_meaning_for_llm = (
+            f"（表名上下文：{r['table_name']}）{r['business_meaning']}"
+            if r["table_name"]
+            else r["business_meaning"]
+        )
         rows_to_check.append({
             "row_index": r["index"],
-            "中文表名": r["table_name"],
             "字段中文名": r["field_name"],
-            "业务含义": r["business_meaning"],
+            "业务含义": business_meaning_for_llm,
             "枚举值": enum_value,
         })
 
