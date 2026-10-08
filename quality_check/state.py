@@ -12,7 +12,7 @@ class RowData(TypedDict):
     field_type: str           # 字段所属类型
     domain_type: str          # 域类型
     data_example: str         # 数据示例
-    is_enum: str              # 是否枚举（"是"/"否"）
+    is_enum: str              # 是否枚举（代码枚举类/标志类必须为"是"，其余四类必须为"否"）
     business_meaning: str     # 业务定义
     enum_values: str          # 枚举值（原始）
 
@@ -28,7 +28,7 @@ class RowData(TypedDict):
     normalized_enum: str      # 规范化后的枚举值（写 Excel 时覆盖原枚举值）
 
     # check_enum_type_consistency 节点产出
-    flag_issues: list[str]    # 标志类误用问题列表（码值有且仅有"是"和"否"）
+    flag_issues: list[str]    # 类型申报互斥问题（代码枚举类应为标志类 / 标志类应为代码枚举类）
 
     # combine_results 节点产出
     check_result: str         # "通过" / "不通过"

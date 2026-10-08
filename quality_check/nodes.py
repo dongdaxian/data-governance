@@ -6,7 +6,7 @@
     |
   load_excel    -- 读取 Excel，初始化 RowData
     |
-  check_rules   -- 规则检查：非空 + 类型合法 + 枚举一致 + 域类型匹配 + 数据示例 + 重复
+  check_rules   -- 规则检查：必填非空 + 中文名 + 类型合法 + 枚举三元一致性 + 域类型匹配 + 数据示例 + 重复
     |
   normalize_enum    -- LLM 规范化枚举值
     |
@@ -39,6 +39,7 @@ from quality_check.constants import (
     VALID_FIELD_TYPES,
     DOMAIN_WHITELIST,
     KEY_ITEM_RULES,
+    ENUM_VALUE_PLACEHOLDERS,
 )
 from common.domain_rules import parse_domain_type, check_data_example, RE_CHINESE
 from common.llm_client import build_row_result_map
@@ -82,16 +83,23 @@ def load_excel_node(state: GraphState) -> dict:
 # ============================================================
 
 def check_rules_node(state: GraphState) -> dict:
-    """规则检查：非空 + 中文名含中文字符 + 类型合法 + 枚举一致 + 域类型匹配 + 数据示例 + 重复。
+    """规则检查：非空 + 中文名含中文字符 + 类型合法 + 枚举三元一致性 + 域类型匹配 + 数据示例 + 重复。
 
     检查间逻辑依赖：
-      非空 -> 类型合法 -> 枚举一致 / 域类型匹配 -> 数据示例
+      非空 -> 类型合法 -> 枚举三元一致性 / 域类型匹配 -> 数据示例
       重复 在所有行检查完后批量执行
+
+    枚举三元一致性：字段所属类型决定「是否枚举」与「枚举值」的唯一合法形态
+      （代码枚举类/标志类：必须为"是"且有枚举值；其余四类：必须为"否"且无枚举值），
+      三项合并为一次判断，每行最多产出一条结论。
     """
-    print("\n=== 步骤 2/6: 规则检查（非空+中文名+类型+枚举+域类型+数据示例+重复）===")
+    print("\n=== 步骤 2/6: 规则检查（非空+中文名+类型+枚举三元+域类型+数据示例+重复）===")
     rows = state["rows"]
 
-    # --- 预处理：内容仅为"无"的字段视为未填写，替换为空（中文表名除外） ---
+    # --- 预处理 ---
+    # ① 内容仅为"无"的字段视为未填写，替换为空（中文表名除外）
+    # ② 枚举值列中表示"无"的符号占位符（- / — 等）同样视为未填写
+    #    ② 只作用于枚举值列：其余字段允许出现这类符号（如数据示例、域类型的长度写法）
 
     data_fields = (
         "field_name", "field_type", "domain_type",
@@ -101,6 +109,8 @@ def check_rules_node(state: GraphState) -> dict:
         for f in data_fields:
             if row[f] == "无":
                 row[f] = ""
+        if row["enum_values"] in ENUM_VALUE_PLACEHOLDERS:
+            row["enum_values"] = ""
 
     # --- 第一阶段：逐行规则检查 ---
 
@@ -136,26 +146,26 @@ def check_rules_node(state: GraphState) -> dict:
             else:
                 type_valid = True
 
-        # 是否枚举一致性 + 枚举值联动（依赖类型合法）
+        # 枚举三元一致性：字段所属类型 / 是否枚举 / 枚举值 三项联合判定，只报一条结论（依赖类型合法）
         if type_valid and row["is_enum"] and row["is_enum"].strip():
-            # 代码枚举类、标志类必须填"是"并携带枚举值
-            is_enum_required = row["field_type"] in ("代码枚举类", "标志类")
             is_enum_val = row["is_enum"].strip()
+            is_enum_required = row["field_type"] in ("代码枚举类", "标志类")
+            has_enum_values = bool(row["enum_values"] and row["enum_values"].strip())
+
+            # 期望形态由字段所属类型唯一确定：
+            #   代码枚举类/标志类 -> "是否枚举"为"是" 且 有枚举值
+            #   其余四类         -> "是否枚举"为"否" 且 无枚举值
+            expect_is_enum = "是" if is_enum_required else "否"
+            expect_has_values = is_enum_required
 
             if is_enum_val not in ("是", "否"):
                 issues.append(f"'是否枚举'填写为'{is_enum_val}'，必须为'是'或'否'")
-            else:
-                if is_enum_required and is_enum_val != "是":
-                    issues.append(f"{row['field_type']}字段的'是否枚举'必须为'是'，实际为'{is_enum_val}'")
-                elif not is_enum_required and is_enum_val != "否":
-                    issues.append(f"非代码枚举类/标志类字段的'是否枚举'必须为'否'，实际为'{is_enum_val}'")
-
-            # 枚举值联动
-            has_enum_values = bool(row["enum_values"] and row["enum_values"].strip())
-            if is_enum_val == "是" and not has_enum_values:
-                issues.append("'是否枚举'为'是'但枚举值为空")
-            elif is_enum_val == "否" and has_enum_values:
-                issues.append("'是否枚举'为'否'但枚举值不为空")
+            elif is_enum_val != expect_is_enum or has_enum_values != expect_has_values:
+                issues.append(
+                    f"{row['field_type']}字段的'是否枚举'必须为'{expect_is_enum}'"
+                    f"且{'填写' if expect_has_values else '不填写'}枚举值，"
+                    f"实际为'{is_enum_val}'且枚举值{'不为空' if has_enum_values else '为空'}"
+                )
 
         # 域类型与字段所属类型匹配（类型不合法或枚举类/标志类直接跳过）
         domain_key = None
@@ -246,6 +256,7 @@ def check_semantic_node(state: GraphState) -> dict:
             enum_value = r["enum_values"]
         rows_to_check.append({
             "row_index": r["index"],
+            "中文表名": r["table_name"],
             "字段中文名": r["field_name"],
             "业务含义": r["business_meaning"],
             "枚举值": enum_value,
