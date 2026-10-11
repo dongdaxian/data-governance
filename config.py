@@ -92,6 +92,11 @@ MILVUS_URI = os.getenv('MILVUS_URI', '')
 
 MILVUS_TOKEN = os.getenv('MILVUS_TOKEN', '')
 
+# milvus-lite 本地库文件路径（如 ./milvus_lite.db）；非空时使用本地模式。
+# 注意：不能复用 MILVUS_URI 承载本地路径——pymilvus 在 import 时会读取该环境变量，
+# 本地文件路径会被其视为非法 URI 并抛 ConnectionConfigException。
+MILVUS_LITE_DB = os.getenv('MILVUS_LITE_DB', '')
+
 MILVUS_COLLECTION = os.getenv('MILVUS_COLLECTION', 'dict_non_enum')
 
 # 按字段所属类型分 collection 存储，检索时只在对应类型的 collection 里搜

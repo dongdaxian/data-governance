@@ -13,6 +13,8 @@ JSON 缺失或格式错误时回退为空表（即不做扩展）。
 import json
 import os
 
+from common.domain_rules import check_data_example, INVALID_EXAMPLE_PLACEHOLDERS
+
 # 近义词表配置文件路径（与模块同目录）
 _SYNONYMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "synonyms.json")
 
@@ -76,3 +78,20 @@ def preprocess_field_name(field_name: str) -> list[str]:
             continue
         results.append(stem + member)
     return results
+
+
+def detect_datetime_domain(data_example: str) -> str | None:
+    """判断数据示例匹配的日期时间类型，返回改写后缀（日期/时间/时间戳）或 None。
+
+    口径：复用 domain_rules 宽松校验（纯数字位数在范围内即匹配）；
+    空值或无效占位符跳过。判定顺序 DATE → TIME → DATETIME
+    （三者对合法示例天然互斥，不会同时命中）。
+    """
+    example = str(data_example or "").strip()
+    if not example or example in INVALID_EXAMPLE_PLACEHOLDERS:
+        return None
+    for domain_type, suffix in (("DATE", "日期"), ("TIME", "时间"), ("DATETIME", "时间戳")):
+        ok, _ = check_data_example(domain_type, example)
+        if ok:
+            return suffix
+    return None

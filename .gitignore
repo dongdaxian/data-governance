@@ -13,6 +13,9 @@ data/local_sample/
 # 字典mock原始文件
 data/dictionary_mock/
 
+# 本地 milvus-lite 向量库数据
+milvus_lite.db/
+
 
 # LLM 调用日志（自动生成，按模块分区）
 

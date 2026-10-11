@@ -59,6 +59,7 @@ sys.modules.setdefault("bottleneck", None)
 from config import (
     MILVUS_URI,
     MILVUS_TOKEN,
+    MILVUS_LITE_DB,
     MILVUS_COLLECTION,
     TYPE_COLLECTION_MAP,
     MILVUS_PROXY,
@@ -284,7 +285,11 @@ def get_client():
         except Exception:
             _client = None
 
-    _client = MilvusClient(uri=MILVUS_URI, token=MILVUS_TOKEN, timeout=30)
+    if MILVUS_LITE_DB:
+        # milvus-lite 本地模式：无鉴权，不能传 token，否则报鉴权错误
+        _client = MilvusClient(uri=MILVUS_LITE_DB)
+    else:
+        _client = MilvusClient(uri=MILVUS_URI, token=MILVUS_TOKEN, timeout=30)
 
     _logger.info("Milvus 连接成功: %s", _client.get_server_version())
 
@@ -304,6 +309,9 @@ def create_collection(client, collection_name=None):
 
     schema = MilvusClient.create_schema(auto_id=False, enable_dynamic_field=False)
 
+    # 中文分词器：milvus-lite 仅支持 "jieba"，远程 Milvus 2.5+ 用 "chinese"（内部即 jieba）
+    analyzer_type = "jieba" if MILVUS_LITE_DB else "chinese"
+
     schema.add_field("standard_id", DataType.VARCHAR, is_primary=True, max_length=20)
 
     schema.add_field(
@@ -311,7 +319,7 @@ def create_collection(client, collection_name=None):
         DataType.VARCHAR,
         max_length=200,
         enable_analyzer=True,
-        analyzer_params={"type": "chinese"},
+        analyzer_params={"type": analyzer_type},
     )
 
     schema.add_field("name_dense", DataType.FLOAT_VECTOR, dim=EMBED_DIMENSION)
@@ -323,7 +331,7 @@ def create_collection(client, collection_name=None):
         DataType.VARCHAR,
         max_length=4000,
         enable_analyzer=True,
-        analyzer_params={"type": "chinese"},
+        analyzer_params={"type": analyzer_type},
     )
 
     schema.add_field("meaning_dense", DataType.FLOAT_VECTOR, dim=EMBED_DIMENSION)
@@ -411,8 +419,12 @@ def ensure_loaded(client, collection_name=None):
         return
 
     # 显式按 1 副本加载：单节点部署只有 1 个 streaming node，
-    # 服务端默认副本数 > 1 时会报 service resource insufficient
-    client.load_collection(collection_name, replica_number=1)
+    # 服务端默认副本数 > 1 时会报 service resource insufficient；
+    # milvus-lite 本地模式不支持 replica_number 参数，仅远程服务端传入
+    if MILVUS_LITE_DB:
+        client.load_collection(collection_name)
+    else:
+        client.load_collection(collection_name, replica_number=1)
     _loaded_collections.add(collection_name)
 
 

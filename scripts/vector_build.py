@@ -128,8 +128,9 @@ def _print_results(results):
         sid = r["standard_id"]
         name = r["name_text"]
         dense = r["dense_score"]
-        sparse = r["sparse_score"]
-        print(f"    [{src}] {sid} {name} (dense={dense}, sparse={sparse})")
+        ns = r.get("name_sparse_score", 0.0)
+        ms = r.get("meaning_sparse_score", 0.0)
+        print(f"    [{src}] {sid} {name} (dense={dense}, name_sparse={ns}, meaning_sparse={ms})")
 
 
 def main():

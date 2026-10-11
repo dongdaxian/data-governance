@@ -16,9 +16,9 @@
 
 from standard_mapping.state import MappingGraphState, FieldToMap, CandidateStandard
 from standard_mapping.excel_utils import read_excel, write_excel
-from standard_mapping.llm import get_llm, select_standard, rewrite_field_names
+from standard_mapping.llm import get_llm, select_standard, rewrite_field_names, rewrite_datetime_field_names
 from standard_mapping.constants import NON_ENUM_TYPES
-from standard_mapping.preprocess import preprocess_field_name
+from standard_mapping.preprocess import preprocess_field_name, detect_datetime_domain
 from common.domain_rules import check_data_example
 from common.vector_store import search as vector_search, translate_milvus_error
 from common.exceptions import NonRetryableError
@@ -219,6 +219,62 @@ def rewrite_flag_fields(rows: list[FieldToMap]) -> None:
 
 
 # ============================================================
+# 日期时间字段名改写（检索前预处理，LLM 改写）
+# ============================================================
+
+def rewrite_datetime_fields(rows: list[FieldToMap]) -> None:
+    """对日期时间类字段做字段名改写（预处理）。
+
+    - 只处理 field_type == "日期时间类" 的行；用数据示例判定日期/时间/时间戳
+      （复用 domain_rules 宽松口径），命中则送 LLM 改写为"××日期/时间/时间戳"。
+    - 字段名已以匹配后缀结尾（如"开户日期"）跳过 LLM，保持原名。
+    - 命中行：row["rewritten_field_name"] = 改写结果，日志记录 改写前->后。
+    - 未命中/LLM 缺失行：回退原始名。
+    - LLM 调用整体失败：warning 后全部回退原始值，不中断流程。
+    """
+    target = []
+    for r in rows:
+        if r["field_type"] != "日期时间类":
+            continue
+        suffix = detect_datetime_domain(r["data_example"])
+        if not suffix:
+            continue
+        if r["field_name"].endswith(suffix):
+            # 已以匹配后缀结尾（语义已明确），无需改写
+            continue
+        r["datetime_rewrite_suffix"] = suffix
+        target.append(r)
+    if not target:
+        return
+    llm = get_llm()
+    try:
+        results = rewrite_datetime_field_names(llm, [{
+            "row_index": r["index"],
+            "field_name": r["field_name"],
+            "business_meaning": r["business_meaning"],
+            "data_example": r["data_example"],
+            "detected_type": r["datetime_rewrite_suffix"],
+        } for r in target])
+        result_map, duplicate_indices = build_row_result_map(results)
+        for r in target:
+            if r["index"] in duplicate_indices or r["index"] not in result_map:
+                print(f"  [WARNING] 行 {r['index']} 日期时间字段名改写结果缺失/重复，使用原始值")
+                continue
+            item = result_map[r["index"]]
+            rewritten_name = item.get("rewritten_field_name", "").strip()
+            if not rewritten_name:
+                continue
+            r["rewritten_field_name"] = rewritten_name
+            msg = (f"  行 {r['index']} 日期时间字段名改写: '{r['field_name']}' -> "
+                   f"'{r['rewritten_field_name']}' "
+                   f"（检测类型: {r['datetime_rewrite_suffix']}，数据示例: {r['data_example']}）")
+            print(msg)
+            append_module_log("standard_mapping", msg + "\n")
+    except Exception as e:
+        print(f"  [WARNING] 日期时间字段名改写 LLM 调用失败，全部使用原始字段名: {e}")
+
+
+# ============================================================
 # 域类型冲突检测（正则规则）
 # ============================================================
 
@@ -252,10 +308,11 @@ def load_and_fetch_node(state: MappingGraphState) -> dict:
     if enum_count > 0:
         print(f"  筛选: 排除 {enum_count} 行代码枚举类字段，保留 {len(rows)} 行非枚举类字段")
 
-    # 字段名/业务定义改写（预处理）：默认原始值，标志类+非"是/否"枚举经 LLM 改写
+    # 字段名/业务定义改写（预处理）：默认原始值，先日期时间类（数据示例判定）后标志类（枚举值判定）经 LLM 改写
     for row in rows:
         row["rewritten_field_name"] = row["field_name"]
         row["rewritten_business_meaning"] = row["business_meaning"]
+    rewrite_datetime_fields(rows)
     rewrite_flag_fields(rows)
 
     # 向量检索 + 字典回填获取备选标准（连续不可重试错误熔断）
