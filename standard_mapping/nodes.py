@@ -451,6 +451,7 @@ def select_standard_node(state: MappingGraphState) -> dict:
             rows_to_select.append({
                 "row_index": row["index"],
                 "field_name": row["rewritten_field_name"],
+                "field_type": row["field_type"],
                 "business_meaning": row["rewritten_business_meaning"],
                 "data_example": row["data_example"],
                 "candidates": [

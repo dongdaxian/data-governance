@@ -311,6 +311,7 @@ def _build_llm_input(row: FieldToMap) -> dict:
     return {
         "row_index": row["index"],
         "field_name": row["field_name"],
+        "field_type": row["field_type"],
         "business_meaning": row["business_meaning"],
         "candidates": candidates,
     }

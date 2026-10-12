@@ -256,7 +256,7 @@ def check_semantic_node(state: GraphState) -> dict:
         elif r["enum_values"]:
             enum_value = r["enum_values"]
         business_meaning_for_llm = (
-            f"（表名上下文：{r['table_name']}）{r['business_meaning']}"
+            f"来自表“{r['table_name']}”。{r['business_meaning']}"
             if r["table_name"]
             else r["business_meaning"]
         )
