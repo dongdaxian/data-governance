@@ -2,9 +2,9 @@
 
 ## 创建项目
 记得在.gitignore同级目录建一个.env文件，然后写入  
-API_KEY=xxxxxx  
-MILVUS_URI=xxxxxx  
-MILVUS_TOKEN=xxxxxx  
+API_KEY=xxxx
+MILVUS_LITE_DB=./milvus_lite.db
+MILVUS_PROXY=none 
 （这里API_KEY默认来源于火山引擎，模型默认使用deepseek-v4-flash；若使用其他平台的API_KEY，则需要添加URL和模型声明，例如：
 BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-pro）
