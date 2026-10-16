@@ -107,36 +107,59 @@ def write_excel(
     rows: list[FieldToMap],
     input_file: str,
     include_candidates: bool = False,
+    append: bool = False,
 ):
     """将落标结果写入 Excel。
 
     完整复制输入文件作为输出（保留全部原始列、数据、合并表头和格式），
     在末尾追加落标结果列，第1行新增"落标结果"合并表头组。
     代码枚举类等被过滤的行，结果列填空。
+
+    append=True 时（增量写盘）：不重建文件，打开已存在的输出文件，
+    定位"落标结果"列并覆盖填充当前 rows 的结果。用于分批处理时每完成一批即写入一次，
+    重复写入已处理行是幂等的。
     """
-    # 1. 完整复制输入文件作为输出文件
-    shutil.copyfile(input_file, file_path)
-
-    # 2. 打开输出文件，追加落标结果列
-    wb = load_workbook(file_path)
-    ws = wb.active
-    max_col = ws.max_column
-
     # 定义新增列顺序
     result_cols = [COL_MAPPING_RESULT, COL_SELECTED_STD_ID, COL_SELECTED_STD_NAME, COL_LLM_REASON]
     if include_candidates:
         result_cols.append(COL_CANDIDATES)
 
-    # 3. 第2行追加列名
-    col_offset = max_col + 1
-    for i, col_name in enumerate(result_cols):
-        ws.cell(row=2, column=col_offset + i, value=col_name)
+    if append:
+        # 增量写盘：打开已有输出文件，定位结果列起始位置（第2行"落标结果"列名）
+        wb = load_workbook(file_path)
+        ws = wb.active
+        col_offset = None
+        for col in range(1, ws.max_column + 1):
+            if ws.cell(row=2, column=col).value == COL_MAPPING_RESULT:
+                col_offset = col
+                break
+        if col_offset is None:
+            raise ValueError(
+                f"增量写入失败：输出文件 {file_path} 未找到结果列 '{COL_MAPPING_RESULT}'"
+            )
+        # 补齐缺失的结果列名（增量时结果列定义与首次一致，防御性补齐）
+        for i, col_name in enumerate(result_cols):
+            if ws.cell(row=2, column=col_offset + i).value in (None, ""):
+                ws.cell(row=2, column=col_offset + i, value=col_name)
+    else:
+        # 1. 完整复制输入文件作为输出文件
+        shutil.copyfile(input_file, file_path)
 
-    # 4. 第1行追加"落标结果"合并表头
-    start_col = col_offset
-    end_col = col_offset + len(result_cols) - 1
-    ws.merge_cells(start_row=1, start_column=start_col, end_row=1, end_column=end_col)
-    ws.cell(row=1, column=start_col, value="落标结果")
+        # 2. 打开输出文件，追加落标结果列
+        wb = load_workbook(file_path)
+        ws = wb.active
+        max_col = ws.max_column
+
+        # 3. 第2行追加列名
+        col_offset = max_col + 1
+        for i, col_name in enumerate(result_cols):
+            ws.cell(row=2, column=col_offset + i, value=col_name)
+
+        # 4. 第1行追加"落标结果"合并表头
+        start_col = col_offset
+        end_col = col_offset + len(result_cols) - 1
+        ws.merge_cells(start_row=1, start_column=start_col, end_row=1, end_column=end_col)
+        ws.cell(row=1, column=start_col, value="落标结果")
 
     # 5. 从第3行起逐行填入结果
     df = pd.read_excel(input_file, header=1)

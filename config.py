@@ -67,8 +67,10 @@ LLM_MAX_TOKENS = 100000
 
 
 # 批处理大小：每次 LLM 调用处理的行数
-
 BATCH_SIZE = 10
+
+# 增量写盘间隔：每处理完多少行输入，写一次输出 Excel（大输入时便于提前看到中间结果）
+WRITE_INTERVAL_ROWS = int(os.getenv('WRITE_INTERVAL_ROWS', '100'))
 
 
 

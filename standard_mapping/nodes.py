@@ -23,6 +23,7 @@ from common.domain_rules import check_data_example
 from common.vector_store import search as vector_search, translate_milvus_error
 from common.exceptions import NonRetryableError
 from common.llm_client import build_row_result_map, append_module_log
+from config import WRITE_INTERVAL_ROWS
 from common.dictionary_store import (
     get_by_ids as get_standards_by_ids,
 )
@@ -424,86 +425,102 @@ def select_standard_node(state: MappingGraphState) -> dict:
     """调用 LLM 从备选标准中选择最合适的标准。
 
     无备选标准的行直接标记为"新增标准"。
+    按 WRITE_INTERVAL_ROWS 行一组处理，每完成一组即增量写盘输出文件，
+    避免大输入时等待全部行处理完才看到结果。
     """
     print("\n=== 步骤 3/4: LLM 标准选择 ===")
     rows = state["rows"]
+    include_candidates = state.get("include_candidates", True)
 
-    # 筛选有备选标准的行
-    rows_to_select = []
-    direct_new_count = 0
-
-    for row in rows:
-        if row.get("candidate_fetch_error"):
-            # 候选检索失败，标记需人工复核
-            row["mapping_result"] = "候选检索失败，需人工复核"
-            row["selected_std_id"] = ""
-            row["selected_std_name"] = ""
-            row["llm_reason"] = row["candidate_fetch_error"]
-            direct_new_count += 1
-        elif not row["candidates"]:
-            # 无备选标准，直接新增
-            row["mapping_result"] = "新增标准"
-            row["selected_std_id"] = ""
-            row["selected_std_name"] = ""
-            row["llm_reason"] = "无备选标准或备选标准经域类型筛选后全部淘汰，直接新增标准"
-            direct_new_count += 1
-        else:
-            rows_to_select.append({
-                "row_index": row["index"],
-                "field_name": row["rewritten_field_name"],
-                "field_type": row["field_type"],
-                "business_meaning": row["rewritten_business_meaning"],
-                "data_example": row["data_example"],
-                "candidates": [
-                    {
-                        "std_id": c["std_id"],
-                        "std_name": c["std_name"],
-                        "business_definition": c["business_definition"],
-                    }
-                    for c in row["candidates"]
-                ],
-            })
-
-    if direct_new_count:
-        print(f"  {direct_new_count} 行无备选标准，直接标记为新增标准")
-
-    if not rows_to_select:
-        print(f"  没有需要 LLM 选择的行")
-        return {"rows": rows, "selection_results": []}
-
-    print(f"  共 {len(rows_to_select)} 行需要 LLM 选择标准")
-    llm = get_llm()
-    results = select_standard(llm, rows_to_select)
-
-    # 应用 LLM 结果
     selection_results = []
-    result_map, duplicate_indices = build_row_result_map(results)
-    sent_indices = {r["row_index"] for r in rows_to_select}
-    missing_count = 0
-    for row in rows:
-        idx = row["index"]
-        if idx in duplicate_indices:
-            row["mapping_result"] = "LLM返回重复结果，需人工复核"
-            row["llm_reason"] = "LLM 调用成功但同一 row_index 返回多条结果，需人工复核"
-            continue
-        if idx not in result_map:
-            if idx in sent_indices:
-                row["mapping_result"] = "LLM未返回该行结果，需人工复核"
-                row["llm_reason"] = "LLM 调用成功但返回结果中缺少该行，需人工复核"
-                missing_count += 1
-            continue
+    llm = get_llm()
 
-        r = result_map[idx]
-        row["mapping_result"] = r["selection"]
-        row["selected_std_id"] = r["selected_std_id"]
-        row["selected_std_name"] = r["selected_std_name"]
-        row["llm_reason"] = r["reasoning"]
-        if r["extension_suggestion"]:
-            row["llm_reason"] += f" 扩展建议: {r['extension_suggestion']}"
-        selection_results.append(r)
+    for chunk_start in range(0, len(rows), WRITE_INTERVAL_ROWS):
+        chunk = rows[chunk_start:chunk_start + WRITE_INTERVAL_ROWS]
+        batch_no = chunk_start // WRITE_INTERVAL_ROWS + 1
+        print(f"  --- 批次 {batch_no}（输入第 {chunk_start + 1}-{chunk_start + len(chunk)} 行）---")
 
-    if missing_count:
-        print(f"  [WARNING] LLM 返回结果缺少 {missing_count} 行，已标记需人工复核")
+        # 筛选有备选标准的行
+        rows_to_select = []
+        direct_new_count = 0
+
+        for row in chunk:
+            if row.get("candidate_fetch_error"):
+                # 候选检索失败，标记需人工复核
+                row["mapping_result"] = "候选检索失败，需人工复核"
+                row["selected_std_id"] = ""
+                row["selected_std_name"] = ""
+                row["llm_reason"] = row["candidate_fetch_error"]
+                direct_new_count += 1
+            elif not row["candidates"]:
+                # 无备选标准，直接新增
+                row["mapping_result"] = "新增标准"
+                row["selected_std_id"] = ""
+                row["selected_std_name"] = ""
+                row["llm_reason"] = "无备选标准或备选标准经域类型筛选后全部淘汰，直接新增标准"
+                direct_new_count += 1
+            else:
+                rows_to_select.append({
+                    "row_index": row["index"],
+                    "field_name": row["rewritten_field_name"],
+                    "field_type": row["field_type"],
+                    "business_meaning": row["rewritten_business_meaning"],
+                    "data_example": row["data_example"],
+                    "candidates": [
+                        {
+                            "std_id": c["std_id"],
+                            "std_name": c["std_name"],
+                            "business_definition": c["business_definition"],
+                        }
+                        for c in row["candidates"]
+                    ],
+                })
+
+        if direct_new_count:
+            print(f"  批次 {batch_no}: {direct_new_count} 行无备选标准，直接标记为新增标准")
+
+        if rows_to_select:
+            print(f"  批次 {batch_no}: 共 {len(rows_to_select)} 行需要 LLM 选择标准")
+            results = select_standard(llm, rows_to_select)
+
+            # 应用 LLM 结果
+            result_map, duplicate_indices = build_row_result_map(results)
+            sent_indices = {r["row_index"] for r in rows_to_select}
+            missing_count = 0
+            for row in chunk:
+                idx = row["index"]
+                if idx in duplicate_indices:
+                    row["mapping_result"] = "LLM返回重复结果，需人工复核"
+                    row["llm_reason"] = "LLM 调用成功但同一 row_index 返回多条结果，需人工复核"
+                    continue
+                if idx not in result_map:
+                    if idx in sent_indices:
+                        row["mapping_result"] = "LLM未返回该行结果，需人工复核"
+                        row["llm_reason"] = "LLM 调用成功但返回结果中缺少该行，需人工复核"
+                        missing_count += 1
+                    continue
+
+                r = result_map[idx]
+                row["mapping_result"] = r["selection"]
+                row["selected_std_id"] = r["selected_std_id"]
+                row["selected_std_name"] = r["selected_std_name"]
+                row["llm_reason"] = r["reasoning"]
+                if r["extension_suggestion"]:
+                    row["llm_reason"] += f" 扩展建议: {r['extension_suggestion']}"
+                selection_results.append(r)
+
+            if missing_count:
+                print(f"  [WARNING] LLM 返回结果缺少 {missing_count} 行，已标记需人工复核")
+
+        # 每完成一组即增量写盘（首组新建文件，后续组追加填充）
+        write_excel(
+            state["output_file"],
+            rows,
+            state["input_file"],
+            include_candidates=include_candidates,
+            append=chunk_start > 0,
+        )
+
     print(f"  标准选择完成，共 {len(selection_results)} 条结果")
     return {"rows": rows, "selection_results": selection_results}
 

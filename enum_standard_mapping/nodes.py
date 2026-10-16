@@ -35,6 +35,7 @@ from enum_standard_mapping.constants import (
 from config import (
     ENUM_RECALL_TOP_N,
     ENUM_VALUE_COLLECTION,
+    WRITE_INTERVAL_ROWS,
 )
 from common.vector_store import get_client, ensure_loaded, translate_milvus_error
 from common.exceptions import NonRetryableError
@@ -179,72 +180,97 @@ def select_result_node(state: EnumMappingGraphState) -> dict:
     - 检索失败的行标记"候选检索失败，需人工复核"
     - 召回为空（无候选枚举代码）的行直接判"新增枚举代码新增标准"
     - 其余行交 LLM 判定，再合并为五分类结果
+    - 按 WRITE_INTERVAL_ROWS 行一组处理，每完成一组即增量写盘输出文件，
+      避免大输入时等待全部行处理完才看到结果
     """
     print("\n=== 步骤 2/3: LLM 标准判定与结果合并 ===")
     rows = state["rows"]
+    include_candidates = state.get("include_candidates", False)
 
-    rows_to_select = []
-    direct_result_count = 0
-
-    for row in rows:
-        if row.get("candidate_fetch_error"):
-            row["mapping_result"] = "候选检索失败，需人工复核"
-            row["llm_reason"] = row["candidate_fetch_error"]
-            direct_result_count += 1
-        elif not row["candidates"]:
-            # 枚举代码召回无候选 → 新增枚举代码新增标准
-            row["mapping_result"] = RESULT_NEW
-            row["llm_reason"] = "枚举值召回无候选枚举代码，判定新增枚举代码并新增标准"
-            direct_result_count += 1
-        else:
-            rows_to_select.append(_build_llm_input(row))
-
-    if direct_result_count:
-        print(f"  {direct_result_count} 行直接判定（检索失败/召回无候选）")
-
-    if not rows_to_select:
-        print("  没有需要 LLM 判定的行")
-        return {"rows": rows, "selection_results": []}
-
-    print(f"  共 {len(rows_to_select)} 行需要 LLM 判定")
-    from common.llm_client import get_llm
-    from standard_mapping.llm import select_standard
-    llm = get_llm()
-    try:
-        results = select_standard(llm, rows_to_select, log_module="enum_standard_mapping")
-    except Exception as e:
-        # LLM 失败兜底：相关行标记失败，保留候选明细供人工处理
-        pending = {r["row_index"] for r in rows_to_select}
-        for row in rows:
-            if row["index"] in pending:
-                row["mapping_result"] = "LLM判断失败"
-                row["llm_reason"] = f"LLM 调用失败（重试后仍失败）: {e}"
-        print(f"  LLM 判定失败: {e}")
-        return {"rows": rows, "selection_results": []}
-
-    # 应用 LLM 结果并合并第 3 步操作
     selection_results = []
-    result_map, duplicate_indices = build_row_result_map(results)
-    sent_indices = {r["row_index"] for r in rows_to_select}
-    missing_count = 0
-    for row in rows:
-        idx = row["index"]
-        if idx in duplicate_indices:
-            row["mapping_result"] = "LLM返回重复结果，需人工复核"
-            row["llm_reason"] = "LLM 调用成功但同一 row_index 返回多条结果，需人工复核"
-            continue
-        if idx not in result_map:
-            if idx in sent_indices:
-                row["mapping_result"] = "LLM未返回该行结果，需人工复核"
-                row["llm_reason"] = "LLM 调用成功但返回结果中缺少该行，需人工复核"
-                missing_count += 1
-            continue
-        r = result_map[idx]
-        _apply_llm_result(row, r)
-        selection_results.append(r)
 
-    if missing_count:
-        print(f"  [WARNING] LLM 返回结果缺少 {missing_count} 行，已标记需人工复核")
+    for chunk_start in range(0, len(rows), WRITE_INTERVAL_ROWS):
+        chunk = rows[chunk_start:chunk_start + WRITE_INTERVAL_ROWS]
+        batch_no = chunk_start // WRITE_INTERVAL_ROWS + 1
+        print(f"  --- 批次 {batch_no}（输入第 {chunk_start + 1}-{chunk_start + len(chunk)} 行）---")
+
+        rows_to_select = []
+        direct_result_count = 0
+
+        for row in chunk:
+            if row.get("candidate_fetch_error"):
+                row["mapping_result"] = "候选检索失败，需人工复核"
+                row["llm_reason"] = row["candidate_fetch_error"]
+                direct_result_count += 1
+            elif not row["candidates"]:
+                # 枚举代码召回无候选 → 新增枚举代码新增标准
+                row["mapping_result"] = RESULT_NEW
+                row["llm_reason"] = "枚举值召回无候选枚举代码，判定新增枚举代码并新增标准"
+                direct_result_count += 1
+            else:
+                rows_to_select.append(_build_llm_input(row))
+
+        if direct_result_count:
+            print(f"  批次 {batch_no}: {direct_result_count} 行直接判定（检索失败/召回无候选）")
+
+        if rows_to_select:
+            print(f"  批次 {batch_no}: 共 {len(rows_to_select)} 行需要 LLM 判定")
+            from common.llm_client import get_llm
+            from standard_mapping.llm import select_standard
+            llm = get_llm()
+            try:
+                results = select_standard(llm, rows_to_select, log_module="enum_standard_mapping")
+            except Exception as e:
+                # LLM 失败兜底：相关行标记失败，保留候选明细供人工处理
+                pending = {r["row_index"] for r in rows_to_select}
+                for row in chunk:
+                    if row["index"] in pending:
+                        row["mapping_result"] = "LLM判断失败"
+                        row["llm_reason"] = f"LLM 调用失败（重试后仍失败）: {e}"
+                print(f"  LLM 判定失败: {e}")
+
+                # 增量写盘（保留已处理的直接判定行）
+                write_excel(
+                    state["output_file"],
+                    rows,
+                    state["input_file"],
+                    include_candidates=include_candidates,
+                    append=chunk_start > 0,
+                )
+                continue
+
+            # 应用 LLM 结果并合并第 3 步操作
+            result_map, duplicate_indices = build_row_result_map(results)
+            sent_indices = {r["row_index"] for r in rows_to_select}
+            missing_count = 0
+            for row in chunk:
+                idx = row["index"]
+                if idx in duplicate_indices:
+                    row["mapping_result"] = "LLM返回重复结果，需人工复核"
+                    row["llm_reason"] = "LLM 调用成功但同一 row_index 返回多条结果，需人工复核"
+                    continue
+                if idx not in result_map:
+                    if idx in sent_indices:
+                        row["mapping_result"] = "LLM未返回该行结果，需人工复核"
+                        row["llm_reason"] = "LLM 调用成功但返回结果中缺少该行，需人工复核"
+                        missing_count += 1
+                    continue
+                r = result_map[idx]
+                _apply_llm_result(row, r)
+                selection_results.append(r)
+
+            if missing_count:
+                print(f"  [WARNING] LLM 返回结果缺少 {missing_count} 行，已标记需人工复核")
+
+        # 每完成一组即增量写盘（首组新建文件，后续组追加填充）
+        write_excel(
+            state["output_file"],
+            rows,
+            state["input_file"],
+            include_candidates=include_candidates,
+            append=chunk_start > 0,
+        )
+
     print(f"  标准判定完成，共 {len(selection_results)} 条结果")
     return {"rows": rows, "selection_results": selection_results}
 
