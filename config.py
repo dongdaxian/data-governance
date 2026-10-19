@@ -66,8 +66,12 @@ LLM_MAX_TOKENS = 100000
 
 
 
-# 批处理大小：每次 LLM 调用处理的行数
+# 批处理大小：每次 LLM 调用处理的行数（quality_check 使用）
 BATCH_SIZE = 10
+
+# 落标处理批处理大小：standard_mapping / enum_standard_mapping 每次 LLM 调用处理的行数
+# （enum_standard_mapping 复用 standard_mapping 的 LLM 调用，二者一致）
+STANDARD_MAPPING_BATCH_SIZE = int(os.getenv('STANDARD_MAPPING_BATCH_SIZE', '5'))
 
 # 增量写盘间隔：每处理完多少行输入，写一次输出 Excel（大输入时便于提前看到中间结果）
 WRITE_INTERVAL_ROWS = int(os.getenv('WRITE_INTERVAL_ROWS', '100'))

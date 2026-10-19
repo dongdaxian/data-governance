@@ -6,7 +6,7 @@
 import json
 from collections import defaultdict
 
-from config import BATCH_SIZE
+from config import STANDARD_MAPPING_BATCH_SIZE as BATCH_SIZE
 
 from langchain_openai import ChatOpenAI
 
