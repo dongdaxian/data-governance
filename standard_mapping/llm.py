@@ -18,6 +18,7 @@ from standard_mapping.state import (
 from standard_mapping.prompts import (
     STANDARD_SELECTION_COMMON,
     STANDARD_SELECTION_EXAMPLES_BY_TYPE,
+    _STANDARD_SELECTION_COMMON_EXAMPLES,
     STANDARD_SELECTION_USER,
     FIELD_NAME_REWRITE_SYSTEM,
     FIELD_NAME_REWRITE_USER,
@@ -36,7 +37,7 @@ def _build_standard_selection_system(field_type: str) -> str:
     Returns:
         组装后的 system prompt 文本
     """
-    examples = STANDARD_SELECTION_EXAMPLES_BY_TYPE.get(
+    examples = _STANDARD_SELECTION_COMMON_EXAMPLES + "\n" + STANDARD_SELECTION_EXAMPLES_BY_TYPE.get(
         field_type, STANDARD_SELECTION_EXAMPLES_BY_TYPE["编码类"]
     )
     return STANDARD_SELECTION_COMMON.format(examples=examples)
