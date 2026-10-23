@@ -14,6 +14,7 @@ from common.llm_client import get_llm, call_with_retry, chunked
 from standard_mapping.state import (
     StandardSelectionResult,
     FieldNameRewriteResult,
+    NumericClassifyResult,
 )
 from standard_mapping.prompts import (
     STANDARD_SELECTION_COMMON,
@@ -23,6 +24,8 @@ from standard_mapping.prompts import (
     FIELD_NAME_REWRITE_USER,
     FIELD_NAME_DATETIME_REWRITE_SYSTEM,
     FIELD_NAME_DATETIME_REWRITE_USER,
+    NUMERIC_CLASSIFY_SYSTEM,
+    NUMERIC_CLASSIFY_USER,
 )
 
 
@@ -235,6 +238,65 @@ def rewrite_datetime_field_names(
                 "row_index": item.row_index,
                 "rewritten_field_name": item.rewritten_field_name,
                 "rewritten_business_meaning": item.rewritten_business_meaning,
+                "reasoning": item.reasoning,
+            })
+
+    return all_results
+
+
+# ============================================================
+# 数值类字段指标/字典分类（数值类字段，检索前筛选指标）
+# ============================================================
+
+def classify_numeric_fields_batch(
+    llm: ChatOpenAI,
+    rows: list[dict],
+    log_module: str = "standard_mapping",
+) -> NumericClassifyResult:
+    """调用 LLM 批量判断数值类字段属于指标还是字典。
+
+    Args:
+        llm: LLM 实例
+        rows: [{"row_index": 0, "field_name": "...", "business_caliber": "..."}, ...]
+        log_module: 日志目录名
+
+    Returns:
+        NumericClassifyResult
+    """
+    data_str = json.dumps(rows, ensure_ascii=False, indent=2)
+    user_text = NUMERIC_CLASSIFY_USER.format(data=data_str)
+    return call_with_retry(
+        llm, NumericClassifyResult, NUMERIC_CLASSIFY_SYSTEM, user_text,
+        module=log_module, label="数值类指标筛选",
+    )
+
+
+def classify_numeric_fields(
+    llm: ChatOpenAI,
+    rows_data: list[dict],
+    log_module: str = "standard_mapping",
+) -> list[dict]:
+    """分批调用 LLM 判断数值类字段指标/字典，返回扁平结果列表。
+
+    Args:
+        llm: LLM 实例
+        rows_data: [{"row_index": 0, "field_name": "...", "business_caliber": "..."}, ...]
+        log_module: 日志目录名
+
+    Returns:
+        [{"row_index": 0, "is_indicator": True, "reasoning": "..."}, ...]
+    """
+    all_results = []
+    total = len(rows_data)
+
+    for i, batch in enumerate(chunked(rows_data, BATCH_SIZE)):
+        print(f"  [数值类指标筛选] 批次 {i + 1}/{(total + BATCH_SIZE - 1) // BATCH_SIZE}，"
+              f"处理 {len(batch)} 行...")
+        result = classify_numeric_fields_batch(llm, batch, log_module=log_module)
+        for item in result.results:
+            all_results.append({
+                "row_index": item.row_index,
+                "is_indicator": item.is_indicator,
                 "reasoning": item.reasoning,
             })
 

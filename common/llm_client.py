@@ -79,6 +79,95 @@ def _result_to_json(result) -> str:
     return str(result)
 
 
+# ============================================================
+# Token 用量统计（进程内累计；所有走 call_with_retry 的成功调用都会计入）
+# ============================================================
+
+# 按 (module, label) 累计：命中缓存输入 / 未命中缓存输入 / 输出 token
+_token_stats: dict[tuple[str, str], dict[str, int]] = {}
+
+
+def estimate_tokens(text) -> int:
+    """字符数近似 token 数（中文为主场景，1 token ≈ 2 字符，偏保守取大）。
+
+    仅用于 API 未返回 usage 时的兜底估算。
+    """
+    n = len(str(text or ""))
+    return max(1, n // 2)
+
+
+def _extract_usage(result) -> tuple[int, int, int]:
+    """从 LLM 返回中提取 (命中缓存输入, 未命中缓存输入, 输出) token 数。
+
+    优先读 result.usage_metadata 的 input_token_details / output_tokens；
+    缺失时返回全 0（由调用方回退字符估算）。
+    """
+    usage = getattr(result, "usage_metadata", None)
+    if usage is not None:
+        input_details = getattr(usage, "input_token_details", None) or {}
+        cached = int(getattr(input_details, "cache_read", None) or 0)
+        uncached = int(getattr(input_details, "cache_creation", None) or 0)
+        input_tokens = int(getattr(usage, "input_tokens", None) or 0)
+        if uncached == 0 and input_tokens:
+            uncached = max(0, input_tokens - cached)
+        output = int(getattr(usage, "output_tokens", None) or 0)
+        return cached, uncached, output
+    return 0, 0, 0
+
+
+def _accumulate_call_token_usage(module: str, label: str, system_text: str, user_text: str, result) -> None:
+    """累计一次成功调用的 token 用量。
+
+    优先使用 API 返回的 usage_metadata（含命中/未命中缓存输入、输出 token）；
+    若 API 未返回 usage（或全为 0），则回退字符估算：system=命中缓存输入，
+    user=未命中缓存输入，输出按返回内容字符数估算。
+    """
+    cached, uncached, output = _extract_usage(result)
+    if cached == 0 and uncached == 0 and output == 0:
+        cached = estimate_tokens(system_text)
+        uncached = estimate_tokens(user_text)
+        output = estimate_tokens(_result_to_json(result))
+    bucket = _token_stats.setdefault((module, label), {"cached_input": 0, "uncached_input": 0, "output": 0})
+    bucket["cached_input"] += cached
+    bucket["uncached_input"] += uncached
+    bucket["output"] += output
+
+
+def get_token_stats_summary() -> dict:
+    """返回当前 token 统计：总量 + 按 (模块, 调用类型) 拆分。"""
+    totals = {"cached_input": 0, "uncached_input": 0, "output": 0}
+    breakdown = []
+    for (module, label), b in sorted(_token_stats.items()):
+        totals["cached_input"] += b["cached_input"]
+        totals["uncached_input"] += b["uncached_input"]
+        totals["output"] += b["output"]
+        breakdown.append({
+            "module": module,
+            "label": label,
+            "cached_input": b["cached_input"],
+            "uncached_input": b["uncached_input"],
+            "output": b["output"],
+        })
+    return {"totals": totals, "breakdown": breakdown}
+
+
+def format_token_stats_summary() -> str:
+    """格式化当前 token 统计为可读文本（写日志用）。"""
+    info = get_token_stats_summary()
+    t = info["totals"]
+    total_input = t["cached_input"] + t["uncached_input"]
+    lines = [
+        f"Token 统计: 命中缓存输入={t['cached_input']} | 未命中缓存输入={t['uncached_input']} | "
+        f"输出={t['output']} | 输入合计={total_input} | 总token={total_input + t['output']}"
+    ]
+    for b in info["breakdown"]:
+        lines.append(
+            f"  [{b['module']}/{b['label']}] 命中={b['cached_input']} "
+            f"未命中={b['uncached_input']} 输出={b['output']}"
+        )
+    return "\n".join(lines)
+
+
 def get_llm() -> ChatOpenAI:
     """创建 LLM 实例。"""
     return ChatOpenAI(
@@ -153,6 +242,8 @@ def call_with_retry(
                 f"--- result ---\n{_result_to_json(result)}\n"
                 f"耗时 {elapsed:.1f}秒\n",
             )
+            # 累计 token 用量（命中/未命中缓存输入、输出）
+            _accumulate_call_token_usage(module, label, system_text, user_text, result)
             return result
         except Exception as e:
             elapsed = time.perf_counter() - start

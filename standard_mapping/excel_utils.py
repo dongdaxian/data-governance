@@ -21,6 +21,7 @@ from standard_mapping.constants import (
     COL_CANDIDATES,
 )
 from standard_mapping.state import FieldToMap
+from common.llm_client import append_module_log, format_token_stats_summary
 
 
 def _safe_str(val) -> str:
@@ -78,6 +79,7 @@ def read_excel(file_path: str) -> list[FieldToMap]:
             business_meaning=_safe_str(row.get(col_map["business_meaning"], "")),
             enum_values=_safe_str(row.get(col_map["enum_values"], "")) if "enum_values" in col_map else "",
             data_example=_safe_str(row.get(col_map["data_example"], "")),
+            business_caliber=_safe_str(row.get(col_map["business_caliber"], "")) if "business_caliber" in col_map else "",
             # 初始化结果字段
             candidates=[],
             candidate_fetch_error="",
@@ -197,3 +199,11 @@ def write_excel(
     new_std = sum(1 for r in sorted_rows if r["mapping_result"] == "新增标准")
     fetch_err = sum(1 for r in sorted_rows if "检索失败" in r["mapping_result"])
     print(f"  总计: {total} 行 | 复用已有标准: {reuse} | 复用但扩展: {reuse_ext} | 新增标准: {new_std} | 检索失败: {fetch_err}")
+
+    # 每次写盘时，把当前累计的 token 统计写入模块日志（命中/未命中缓存输入、输出 token）
+    try:
+        token_log = format_token_stats_summary()
+        print(token_log)
+        append_module_log("standard_mapping", "\n" + token_log + "\n")
+    except Exception as e:
+        print(f"  [WARNING] 写入 token 统计日志失败: {e}")

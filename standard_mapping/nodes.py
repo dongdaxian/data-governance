@@ -16,7 +16,13 @@
 
 from standard_mapping.state import MappingGraphState, FieldToMap, CandidateStandard
 from standard_mapping.excel_utils import read_excel, write_excel
-from standard_mapping.llm import get_llm, select_standard, rewrite_field_names, rewrite_datetime_field_names
+from standard_mapping.llm import (
+    get_llm,
+    select_standard,
+    rewrite_field_names,
+    rewrite_datetime_field_names,
+    classify_numeric_fields,
+)
 from standard_mapping.constants import NON_ENUM_TYPES
 from standard_mapping.preprocess import preprocess_field_name, detect_datetime_domain
 from common.domain_rules import check_data_example
@@ -220,6 +226,52 @@ def rewrite_flag_fields(rows: list[FieldToMap]) -> None:
 
 
 # ============================================================
+# 数值类字段指标/字典筛选（检索前预处理，LLM 判断）
+# ============================================================
+
+def filter_numeric_indicator_fields(rows: list[FieldToMap]) -> None:
+    """对数值类字段做指标/字典筛选（预处理，LLM 判断）。
+
+    - 只处理 field_type == "数值类" 的行，用 字段名+业务口径 送 LLM 判定。
+    - 判定为指标的行直接从 rows 剔除（输出结果列留空，与代码枚举类排除一致）。
+    - 单行结果缺失/重复：保守保留该行（视为字典），warning 提示。
+    - LLM 调用整体失败：warning 后保留全部数值类行，不中断流程。
+    """
+    target = [r for r in rows if r["field_type"] == "数值类"]
+    if not target:
+        return
+    llm = get_llm()
+    try:
+        results = classify_numeric_fields(llm, [{
+            "row_index": r["index"],
+            "field_name": r["field_name"],
+            "business_caliber": r.get("business_caliber", ""),
+        } for r in target])
+        result_map, duplicate_indices = build_row_result_map(results)
+        reasoning_map = {item["row_index"]: item.get("reasoning", "") for item in results}
+        removed = []
+        for r in target:
+            if r["index"] in duplicate_indices or r["index"] not in result_map:
+                print(f"  [WARNING] 行 {r['index']} 数值类指标筛选结果缺失/重复，保留该行")
+                continue
+            item = result_map[r["index"]]
+            if not item.get("is_indicator"):
+                continue
+            removed.append(r)
+        for r in removed:
+            msg = (f"  行 {r['index']} 数值类字段判定为指标，剔除: '{r['field_name']}' | "
+                   f"口径: {r.get('business_caliber', '')[:60]} | "
+                   f"reasoning: {reasoning_map.get(r['index'], '')}")
+            print(msg)
+            append_module_log("standard_mapping", msg + "\n")
+        if removed:
+            rows[:] = [r for r in rows if r not in removed]
+            print(f"  数值类指标筛选: 剔除 {len(removed)} 行指标字段，保留 {len(rows)} 行")
+    except Exception as e:
+        print(f"  [WARNING] 数值类指标筛选 LLM 调用失败，保留全部数值类行: {e}")
+
+
+# ============================================================
 # 日期时间字段名改写（检索前预处理，LLM 改写）
 # ============================================================
 
@@ -313,6 +365,8 @@ def load_and_fetch_node(state: MappingGraphState) -> dict:
     for row in rows:
         row["rewritten_field_name"] = row["field_name"]
         row["rewritten_business_meaning"] = row["business_meaning"]
+    # 数值类指标筛选（用原始字段名+业务口径判断，须在字段名改写前执行）
+    filter_numeric_indicator_fields(rows)
     rewrite_datetime_fields(rows)
     rewrite_flag_fields(rows)
 

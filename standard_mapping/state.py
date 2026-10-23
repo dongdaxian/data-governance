@@ -33,6 +33,7 @@ class FieldToMap(TypedDict):
     business_meaning: str     # 业务含义
     enum_values: str          # 枚举值
     data_example: str         # 数据示例（申请单上）
+    business_caliber: str     # 业务口径（输入 Excel 业务口径(选填)列，指标判断用）
 
     # load_and_fetch 节点产出
     candidates: list[CandidateStandard]  # 备选标准列表
@@ -90,3 +91,15 @@ class FieldNameRewriteItem(BaseModel):
 class FieldNameRewriteResult(BaseModel):
     """批量字段名改写结果。"""
     results: list[FieldNameRewriteItem] = Field(description="每行的字段名改写结果列表")
+
+
+class NumericClassifyItem(BaseModel):
+    """单条数值类字段指标/字典分类结果。"""
+    row_index: int = Field(description="行号，与输入数据中的row_index对应")
+    is_indicator: bool = Field(description="该字段是否为指标（True=指标，False=字典）")
+    reasoning: str = Field(description="判断依据（中文，简述）")
+
+
+class NumericClassifyResult(BaseModel):
+    """批量数值类字段指标/字典分类结果。"""
+    results: list[NumericClassifyItem] = Field(description="每行的分类结果列表")
