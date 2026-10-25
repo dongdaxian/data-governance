@@ -21,6 +21,7 @@ from enum_standard_mapping.constants import (
     COL_CANDIDATES,
 )
 from enum_standard_mapping.state import FieldToMap
+from common.llm_client import append_module_log, format_token_stats_summary
 
 
 def _safe_str(val) -> str:
@@ -196,3 +197,11 @@ def write_excel(
         else:
             other += 1
     print(f"  总计: {total} 行 | " + " | ".join(f"{k}: {v}" for k, v in stats.items()) + f" | 其他: {other}")
+
+    # 每次写盘时，把当前累计的 token 统计写入模块日志（命中/未命中缓存输入、输出 token）
+    try:
+        token_log = format_token_stats_summary()
+        print(token_log)
+        append_module_log("enum_standard_mapping", "\n" + token_log + "\n")
+    except Exception as e:
+        print(f"  [WARNING] 写入 token 统计日志失败: {e}")

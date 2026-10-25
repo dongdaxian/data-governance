@@ -29,6 +29,7 @@ from quality_check.constants import (
 )
 
 from quality_check.state import RowData
+from common.llm_client import append_module_log, format_token_stats_summary
 
 def _match_columns(df: pd.DataFrame) -> dict[str, str]:
     """精确匹配 Excel 列名到内部字段名。
@@ -226,4 +227,12 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
     failed = total - passed
 
     print(f"  总计: {total} 行 | 通过: {passed} | 不通过: {failed}")
+
+    # 每次写盘时，把当前累计的 token 统计写入模块日志（命中/未命中缓存输入、输出 token）
+    try:
+        token_log = format_token_stats_summary()
+        print(token_log)
+        append_module_log("quality_check", "\n" + token_log + "\n")
+    except Exception as e:
+        print(f"  [WARNING] 写入 token 统计日志失败: {e}")
 
