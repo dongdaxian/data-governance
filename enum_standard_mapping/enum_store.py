@@ -12,7 +12,7 @@
   A 命中 C（最高分）和 D → 只 +1 且占用 C；B 轮询时 C 已用，仅 D、E 可贡献）。
 
 召回筛选：
-  filter_recall_standards 按 score >= floor(n/2)+1 过滤，score 由大到小排列取前 top_n 个；
+  filter_recall_standards 按 score >= n - floor(n/3) 过滤，score 由大到小排列取前 top_n 个；
   score == n 判"复用"，score < n 判"修改"；返回空列表说明需"新增枚举代码新增标准"。
 """
 
@@ -185,7 +185,7 @@ def filter_recall_standards(item_scores: dict, n: int, top_n: int = 5) -> list[d
     """筛选召回标准（阶段 1 出候选）。
 
     规则：
-      1. 筛除 score 未到 floor(n/2)+1 的枚举代码
+      1. 筛除 score 未到 n - floor(n/3) 的枚举代码
       2. 按 score 由大到小排列（同分按 item_id 稳定排序），取前 top_n 个
       3. 每条输出 {"item_id", "score", "matched", "operation"}：
            score == n  -> "复用"
@@ -196,7 +196,7 @@ def filter_recall_standards(item_scores: dict, n: int, top_n: int = 5) -> list[d
     """
     if n <= 0:
         return []
-    min_score = math.floor(n / 2) + 1  # 存活线：score >= floor(n/2)+1
+    min_score = n - math.floor(n / 3)  # 存活线：score >= n - floor(n/3)
     survivors = [
         {
             "item_id": item_id,
