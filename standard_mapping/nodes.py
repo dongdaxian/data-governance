@@ -7,7 +7,7 @@
     ↓
   check_domain     -- 域类型精筛（标志类恒定通过，非标志类正则检测冲突，冲突则淘汰）
     ↓
-  select_standard  -- LLM 标准选择（复用/复用扩展/新增）
+  select_standard  -- LLM 标准选择（复用/新增）
     ↓
   write_result     -- 输出结果 Excel
     ↓
@@ -559,8 +559,6 @@ def select_standard_node(state: MappingGraphState) -> dict:
                 row["selected_std_id"] = r["selected_std_id"]
                 row["selected_std_name"] = r["selected_std_name"]
                 row["llm_reason"] = r["reasoning"]
-                if r["extension_suggestion"]:
-                    row["llm_reason"] += f" 扩展建议: {r['extension_suggestion']}"
                 selection_results.append(r)
 
             if missing_count:

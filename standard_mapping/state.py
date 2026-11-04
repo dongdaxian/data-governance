@@ -45,7 +45,7 @@ class FieldToMap(TypedDict):
     domain_check_details: str  # 域检查详情
 
     # select_standard 节点产出
-    mapping_result: str        # "复用已有标准" / "复用已有标准但扩展业务定义" / "新增标准"
+    mapping_result: str        # "复用已有标准" / "新增标准"
     selected_std_id: str       # 选中标准编号
     selected_std_name: str     # 选中标准名称
     llm_reason: str            # LLM 判断过程
@@ -68,10 +68,9 @@ class MappingGraphState(TypedDict):
 class StandardSelectionItem(BaseModel):
     """单条标准选择结果。"""
     row_index: int = Field(description="行号，与输入数据中的row_index对应")
-    selection: str = Field(description="选择结果：复用已有标准 / 复用已有标准但扩展业务定义 / 新增标准")
+    selection: str = Field(description="选择结果：复用已有标准 / 新增标准")
     selected_std_id: str = Field(default="", description="选中的标准编号")
     selected_std_name: str = Field(default="", description="选中的标准名称")
-    extension_suggestion: str = Field(default="", description="扩展业务定义建议（仅当选择'复用已有标准但扩展业务定义'时填写）")
     reasoning: str = Field(description="完整的逐步推理过程：必须写明判断依据、对每个备选的匹配度分析与权衡的逻辑")
 
 

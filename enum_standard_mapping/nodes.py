@@ -6,7 +6,7 @@
     ↓
   load_and_score  -- 读取 Excel，筛选代码枚举类字段，解析枚举值，向量打分 + 召回筛选（Top5）
     ↓
-  select_result   -- 第4步 LLM 标准判定（复用 standard_mapping 逻辑）+ 与第3步枚举代码操作合并为五分类结果
+  select_result   -- 第4步 LLM 标准判定（复用 standard_mapping 逻辑）+ 与第3步枚举代码操作合并为三类结果
     ↓
   write_result    -- 输出结果 Excel
     ↓
@@ -27,9 +27,7 @@ from enum_standard_mapping.constants import (
     ENUM_FIELD_TYPE,
     RESULT_NEW,
     RESULT_REUSE_REUSE,
-    RESULT_REUSE_MODIFY,
     RESULT_MODIFY_REUSE,
-    RESULT_MODIFY_MODIFY,
     OP_REUSE,
 )
 from config import (
@@ -179,7 +177,7 @@ def select_result_node(state: EnumMappingGraphState) -> dict:
 
     - 检索失败的行标记"候选检索失败，需人工复核"
     - 召回为空（无候选枚举代码）的行直接判"新增枚举代码新增标准"
-    - 其余行交 LLM 判定，再合并为五分类结果
+    - 其余行交 LLM 判定，再合并为三类结果
     - 按 WRITE_INTERVAL_ROWS 行一组处理，每完成一组即增量写盘输出文件，
       避免大输入时等待全部行处理完才看到结果
     """
@@ -276,7 +274,7 @@ def select_result_node(state: EnumMappingGraphState) -> dict:
 
 
 def _apply_llm_result(row: FieldToMap, r: dict) -> None:
-    """将单行 LLM 判定结果与第 3 步枚举代码操作合并为五分类结果。"""
+    """将单行 LLM 判定结果与第 3 步枚举代码操作合并为三分类结果。"""
     selection = r["selection"]
     if selection == "新增标准":
         row["mapping_result"] = RESULT_NEW
@@ -295,10 +293,7 @@ def _apply_llm_result(row: FieldToMap, r: dict) -> None:
         return
 
     op = sel_cand["operation"]
-    if selection == "复用已有标准":
-        row["mapping_result"] = RESULT_REUSE_REUSE if op == OP_REUSE else RESULT_MODIFY_REUSE
-    else:  # 复用已有标准但扩展业务定义（=修改已有标准）
-        row["mapping_result"] = RESULT_REUSE_MODIFY if op == OP_REUSE else RESULT_MODIFY_MODIFY
+    row["mapping_result"] = RESULT_REUSE_REUSE if op == OP_REUSE else RESULT_MODIFY_REUSE
 
     row["selected_std_id"] = r["selected_std_id"]
     row["selected_std_name"] = r["selected_std_name"]
@@ -307,8 +302,6 @@ def _apply_llm_result(row: FieldToMap, r: dict) -> None:
     if op != OP_REUSE:
         row["enum_code_suggestion"] = _build_enum_code_suggestion(sel_cand)
     row["llm_reason"] = r["reasoning"]
-    if r.get("extension_suggestion"):
-        row["llm_reason"] += f" 扩展建议: {r['extension_suggestion']}"
 
 
 def _build_enum_code_suggestion(cand: EnumItemDetail) -> str:

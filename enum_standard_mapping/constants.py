@@ -1,6 +1,6 @@
 """枚举落标处理 -- 常量定义。
 
-五分类结果体系与列名定义。
+三类结果体系与列名定义。
 """
 
 # ============================================================
@@ -21,18 +21,15 @@ OP_REUSE = "复用"
 OP_MODIFY = "修改"
 
 # ============================================================
-# 五分类结果体系（第3步枚举代码操作 + 第4步标准操作 合并）
+# 三类结果体系（第3步枚举代码操作 + 第4步标准操作 合并）
 # ============================================================
 
 RESULT_NEW = "新增枚举代码新增标准"
 RESULT_REUSE_REUSE = "复用枚举代码+复用已有标准"
-RESULT_REUSE_MODIFY = "复用枚举代码+修改已有标准"
 RESULT_MODIFY_REUSE = "修改枚举代码+复用已有标准"
-RESULT_MODIFY_MODIFY = "修改枚举代码+修改已有标准"
 
 ALL_RESULTS = [
-    RESULT_NEW, RESULT_REUSE_REUSE, RESULT_REUSE_MODIFY,
-    RESULT_MODIFY_REUSE, RESULT_MODIFY_MODIFY,
+    RESULT_NEW, RESULT_REUSE_REUSE, RESULT_MODIFY_REUSE,
 ]
 
 # ============================================================

@@ -195,10 +195,9 @@ def write_excel(
     sorted_rows = sorted(rows, key=lambda r: r["index"])
     total = len(sorted_rows)
     reuse = sum(1 for r in sorted_rows if r["mapping_result"] == "复用已有标准")
-    reuse_ext = sum(1 for r in sorted_rows if r["mapping_result"] == "复用已有标准但扩展业务定义")
     new_std = sum(1 for r in sorted_rows if r["mapping_result"] == "新增标准")
     fetch_err = sum(1 for r in sorted_rows if "检索失败" in r["mapping_result"])
-    print(f"  总计: {total} 行 | 复用已有标准: {reuse} | 复用但扩展: {reuse_ext} | 新增标准: {new_std} | 检索失败: {fetch_err}")
+    print(f"  总计: {total} 行 | 复用已有标准: {reuse} | 新增标准: {new_std} | 检索失败: {fetch_err}")
 
     # 每次写盘时，把当前累计的 token 统计写入模块日志（命中/未命中缓存输入、输出 token）
     try:

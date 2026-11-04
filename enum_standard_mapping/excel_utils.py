@@ -181,14 +181,12 @@ def write_excel(
 
     # 打印统计
     from enum_standard_mapping.constants import (
-        RESULT_NEW, RESULT_REUSE_REUSE, RESULT_REUSE_MODIFY,
-        RESULT_MODIFY_REUSE, RESULT_MODIFY_MODIFY,
+        RESULT_NEW, RESULT_REUSE_REUSE, RESULT_MODIFY_REUSE,
     )
     sorted_rows = sorted(rows, key=lambda r: r["index"])
     total = len(sorted_rows)
     stats = {
-        RESULT_NEW: 0, RESULT_REUSE_REUSE: 0, RESULT_REUSE_MODIFY: 0,
-        RESULT_MODIFY_REUSE: 0, RESULT_MODIFY_MODIFY: 0,
+        RESULT_NEW: 0, RESULT_REUSE_REUSE: 0, RESULT_MODIFY_REUSE: 0,
     }
     other = 0
     for r in sorted_rows:

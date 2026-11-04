@@ -90,7 +90,7 @@ def select_standard(
     Returns:
         [{"row_index": 0, "selection": "复用已有标准",
            "selected_std_id": "...", "selected_std_name": "...",
-           "extension_suggestion": "...", "reasoning": "..."}, ...]
+           "reasoning": "..."}, ...]
     """
     all_results = []
 
@@ -111,7 +111,6 @@ def select_standard(
                     "selection": item.selection,
                     "selected_std_id": item.selected_std_id,
                     "selected_std_name": item.selected_std_name,
-                    "extension_suggestion": item.extension_suggestion,
                     "reasoning": item.reasoning,
                 })
 

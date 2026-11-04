@@ -36,7 +36,7 @@ class FieldToMap(TypedDict):
     candidate_fetch_error: str        # 检索错误信息
 
     # select_result 节点产出
-    mapping_result: str        # 五分类结果之一
+    mapping_result: str        # 三类结果之一
     selected_std_id: str       # 选中标准编号
     selected_std_name: str     # 选中标准名称
     enum_code_suggestion: str  # 枚举代码处理建议（修改时填补充清单）
