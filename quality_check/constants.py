@@ -46,7 +46,7 @@ INPUT_COLUMNS = {
 
 COL_CHECK_RESULT = "检查结果"
 COL_FAIL_REASON = "说明"
-COL_SOFT_CHECK_RESULT = "软性检查结果"
+COL_SOFT_CHECK_RESULT = "辅助提示"
 
 # ============================================================
 # 域类型白名单（按字段所属类型）

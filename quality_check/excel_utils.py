@@ -9,7 +9,7 @@
 写入：在原始数据基础上填写检查结果，输出新 Excel。
 
   枚举值规范化结果直接覆盖"枚举值(选填)"列；另填"检查结果"、"说明"两列，
-  并在末尾追加"软性检查结果"列（字段类型/枚举值/数据示例等软性提醒）。
+  并在末尾追加"辅助提示"列（字段类型/枚举值/数据示例等软性提醒）。
 
 """
 
@@ -158,7 +158,7 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
 
     数据从第3行起按 index 升序填入：
       枚举值列写规范化后的枚举值（无规范化结果时保留原值）；
-      检查结果/说明/软性检查结果列写各判定结果。
+      检查结果/说明/辅助提示列写各判定结果。
 
     """
 
@@ -190,7 +190,7 @@ def write_excel(file_path: str, rows: list[RowData], input_file: str):
             ws.cell(row=2, column=next_col, value=name)
             next_col += 1
 
-    # 4. 第1行：为结果列区域（检查结果~软性检查结果）新建合并表头"质量检查结果"
+    # 4. 第1行：为结果列区域（检查结果~辅助提示）新建合并表头"质量检查结果"
     first_result_col = col_index[COL_CHECK_RESULT]
     last_result_col = col_index[COL_SOFT_CHECK_RESULT]
     ws.merge_cells(

@@ -48,7 +48,7 @@ API_KEY = os.getenv("API_KEY", "")
 
 # OpenAI 兼容接口地址
 
-BASE_URL = os.getenv("BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3")
+BASE_URL = os.getenv("BASE_URL", "https://ark.cn-beijing.volces.com/api/plan/v3")
 
 
 

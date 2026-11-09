@@ -35,7 +35,7 @@ class RowData(TypedDict):
     fail_reason: str          # 不通过原因汇总
 
     # soft_check 节点产出
-    soft_check_result: str    # 软性检查结果（字段所属类型/枚举值唯一性提示，有提示时非空）
+    soft_check_result: str    # 辅助提示（字段所属类型/枚举值唯一性提示，有提示时非空）
 
 
 class GraphState(TypedDict):
