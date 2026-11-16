@@ -10,6 +10,13 @@
   python main.py quality-check --input data/qc_input.xlsx --output data/qc_output.xlsx
 """
 
+# 必须在任何业务模块 import 之前加载 .env，
+# 否则依赖链（如 common.llm_client -> huggingface_hub）会在环境变量生效前读取
+# HF_HUB_OFFLINE / TRANSFORMERS_OFFLINE 等配置，导致离线模式不生效
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import argparse
 import sys
 import os
