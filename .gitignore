@@ -20,3 +20,6 @@ milvus_lite.db/
 # LLM 调用日志（自动生成，按模块分区）
 logs/
 
+# Office 临时锁文件
+~$*
+
